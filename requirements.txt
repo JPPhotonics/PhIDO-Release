@@ -134,7 +134,7 @@ nvidia-nvjitlink-cu12==12.4.127
 nvidia-nvtx-cu12==12.4.127
 openai==1.60.1
 opt_einsum==3.4.0
-optax==0.2.4
+optax==0.2.5
 orbax-checkpoint==0.11.0
 orjson==3.10.15
 owlready2==0.47
