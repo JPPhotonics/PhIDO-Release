@@ -236,7 +236,7 @@ typing-inspection==0.4.1
 typing_extensions==4.12.2
 tzdata==2025.1
 uritemplate==4.1.1
-urllib3==2.3.0
+urllib3==2.5.0
 wadler_lindig==0.1.7
 watchdog==4.0.2
 wcwidth==0.2.13
