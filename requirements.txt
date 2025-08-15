@@ -189,7 +189,7 @@ requests==2.32.3
 responses==0.25.7
 rich==13.9.4
 rpds-py==0.22.3
-rsa==4.9
+rsa==4.9.1
 ruamel.yaml==0.18.10
 ruamel.yaml.clib==0.2.12
 ruamel.yaml.string==0.1.1
