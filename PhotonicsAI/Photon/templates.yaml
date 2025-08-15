@@ -1,0 +1,278 @@
+TEMPLATE_wdd0:
+  doc:
+    title: Wavelength Division Demultiplexer with 1 input port and 4 output ports. In this context, number of output ports sets the number of channels.
+    description: |
+      A 1-to-4 wavelength (de-)multiplexer designed using a binary tree of cascaded Mach-Zehnder-like
+      lattice filters. This device is engineered to function as a coarse wavelength division multiplexing (cWDM)
+      filter for optical data communication.
+    reference: https://opg.optica.org/oe/fulltext.cfm?uri=oe-21-10-11652&id=253305
+    labels:
+      - Wavelength Division Demultiplexer
+      - active
+
+  nodes:
+    N1: a 1x2 Mach-Zehnder interferometer (MZI)
+    N2: a 1x2 Mach-Zehnder interferometer (MZI)
+    N3: a 1x2 Mach-Zehnder interferometer (MZI)
+  edges: Connect one output port of N1 to the input port of N2, and another output port of N1 to the input port of N3.
+
+  properties:
+    specs:
+      # design_wavelength:
+      # optical_bandwidth:
+      # extinction_ratio:
+      # power_consumption:
+      # footprint:
+      design_wavelength:
+        value: c-band
+        comment: either o-band or c-band
+      speed:
+        value: KHz
+        comment: either GHz or KHz
+      insersion_loss:
+        value: 2
+        comment: dB, range 0-10
+      v_pi:
+        value: 0.75
+        comment: V, range 0-5
+    ports: 1x4
+    optimizer:
+      error_fn: cosine
+
+CIRCUIT_wdd0:
+  doc:
+    title: Wavelength Division Demultiplexer with 1 input port and 4 output ports. In this context, number of output ports sets the number of channels.
+    description: |
+      A 1-to-4 wavelength (de-)multiplexer designed using a binary tree of cascaded Mach-Zehnder-like
+      lattice filters. This device is engineered to function as a coarse wavelength division multiplexing (cWDM)
+      filter for optical data communication.
+    reference: https://opg.optica.org/oe/fulltext.cfm?uri=oe-21-10-11652&id=253305
+    labels:
+      - Wavelength Division Demultiplexer
+      - active
+      - Thermo-optic effect (TO)
+    insertion loss: 2 dB
+    extinction ratio: 25 dB
+    drive voltage/power: 0.75 V
+    footprint Estimate: na
+
+  nodes:
+    N1:
+      component: mzi_1x2_pindiode_cband
+      params:
+        length: 100
+        delta_length: 200
+        # voltage:
+      properties:
+        ports: 1x2
+      placement:
+        x:
+        y:
+        rotation: 0
+    N2:
+      component: mzi_1x2_pindiode_cband
+      params:
+        length: 100
+        delta_length: 100
+        # voltage:
+      properties:
+        ports: 1x2
+      placement:
+        x:
+        y:
+        rotation: 0
+    N3:
+      component: mzi_1x2_pindiode_cband
+      params:
+        length: 100
+        delta_length: 100
+        # voltage:
+      properties:
+        ports: 1x2
+      placement:
+        x:
+        y:
+        rotation: 0
+  edges:
+    E1:
+      link: N1,2:N2,1
+      properties:
+        type: route
+        constraints:
+
+    E2:
+      link: N1,3:N3,1
+      properties:
+        type: route
+        constraints:
+
+  properties:
+    ports: 1x4
+    pdk: cband
+    specs:
+      wavelengths:
+        value: [1550, 1551, 1552, 1553]
+        comment: nm, range 1530-1565
+    optimizer:
+      error_fn: cosine
+      sparam:
+        - S31
+        - S41
+      free_params:
+        passive:
+          - N1.delta_length
+          - N2.delta_length
+          - N3.delta_length
+        # active:
+
+CIRCUIT_mzi_test:
+  doc:
+    title: this is a mzi 2x2
+    description: |
+      a 2x2 Mach-Zehnder interferometer (MZI) with a phase shifter in one arm
+    reference: link
+    labels:
+      - MZI
+      - active
+      - Thermo-optic effect (TO)
+    insertion loss: 2 dB
+    extinction ratio: 25 dB
+    drive voltage/power: 0.75 V
+    footprint Estimate: na
+
+  nodes:
+    N1:
+      component: mzi_2x2_heater_tin_cband
+      params:
+        length: 100
+        delta_length: 200
+        # voltage:
+      properties:
+        ports: 2x2
+      placement:
+        x:
+        y:
+        rotation: 0
+
+  edges:
+
+  properties:
+    ports: 2x2
+    pdk: cband
+    specs:
+      design_wavelength:
+        value: 1550
+        comment: nm, range 1530-1565
+      fsr:
+        value: 8
+        comment: nm, range 0.1-50
+    optimizer:
+      error_fn: cosine
+      sparam:
+        - S31
+      free_params:
+        passive:
+          - N1.delta_length
+
+        # active:
+
+TEMPLATE_mzi_2x2_heater_tin_cband:
+  doc:
+    title: MZI 2x2 - Thermo-optic
+    description: This is a 2x2 Mach-Zehnder interferometer (MZI). Integrated in both arms of the MZI are TiN Heaters.
+    reference: (link)
+  nodes:
+    N1: _mmi2x2
+    N2: heater_tin_cband
+    N3: heater_tin_cband
+  edges:
+    - N1,o3:N2,o1
+    - N1,o4:N3,o1
+  properties:
+    ports: 2x2
+    specs:
+      center_wavelength:
+        value: 1540
+        comment: nm, range 1260-1360 or 1530-1565
+      fsr:
+        value: 10
+        comment: nm, range 0.1-50
+
+CIRCUIT_mzi_2x2_heater_tin_cband:
+  doc:
+    title: MZI 2x2 - Thermo-optic
+    description: This is a 2x2 Mach-Zehnder interferometer (MZI). Integrated in both arms of the MZI are TiN Heaters.
+    reference: (link)
+  nodes:
+    N1:
+      name: mzi_2x2_heater_tin_cband
+      args:
+        length: 100
+        delta_length: 0
+  edges:
+  properties:
+    ports: 2x2
+    specs:
+      lambda_0:
+        value: 1540
+        comment: nm, range 1530-1565
+      fsr:
+        value: 5
+        comment: nm, range 0.1-50
+
+TEMPLATE_transceiver0:
+  doc:
+    title: transceiver, with any number of channels or outputs ports, for any wavelength
+    description: |
+      The 400G Silicon Photonics Integrated Circuit (PIC) Transceiver Chipset is designed
+      for high-performance optical communication in datacenters and accelerator clusters.
+      It offers a bandwidth density of 94 Gb/s/mm and energy efficiency of less than 10 pJ/bit,
+      making it compatible with co-packaged optics (CPO), on-board optics (OBO), and pluggable
+      form factors. This chipset integrates various components such as modulators, multiplexers,
+      and photodetectors that operate efficiently at high temperatures, ensuring reliable
+      performance in compact and power-constrained environments. It meets the 400G-FR4
+      standard, supporting 100G/lane optical communication
+    reference: https://opg.optica.org/abstract.cfm?uri=ofc-2020-T3H.2
+  nodes:
+    N1: TEMPLATE_wdd0
+    N2: mzi_1x1_pindiode_cband
+    N3: mzi_1x1_pindiode_cband
+    N4: mzi_1x1_pindiode_cband
+    N5: mzi_1x1_pindiode_cband
+  edges:
+      # info: N1 has four output ports, connect them to the four mzis
+    - N1,o2:N2,o1
+    - N1,o3:N3,o1
+    - N1,o4:N4,o1
+    - N1,o5:N5,o1
+  properties:
+    specs:
+      wavelengths:
+        value: [1550, 1551, 1552, 1553]
+        comment: nm, range 1530-1565
+    ports: 1x4
+
+TEMPLATE_IQmodulator:
+  doc:
+    title: Inphase/Quadrature Modulator
+    description: na
+    reference: (link)
+  nodes:
+    N1: _mmi1x2
+    N2: tw_mzm
+    N3: tw_mzm
+    N4: _mmi1x2
+    N5: _mmi1x2
+  edges:
+      # info: N1 has four output ports, connect them to the four mzis
+    - N1,o2:N2,o1
+    - N1,o3:N3,o1
+    - N2,o2:N4,o1
+    - N3,o2:N5,o1
+    - N4,o3:N5,o2
+  properties:
+    specs:
+      wavelengths:
+        value: [1550, 1551, 1552, 1553]
+        comment: nm, range 1530-1565
+    ports: 1x3

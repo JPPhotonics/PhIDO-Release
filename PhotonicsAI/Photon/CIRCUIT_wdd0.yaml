@@ -1,0 +1,85 @@
+CIRCUIT_wdd0:
+  doc:
+    title: Wavelength Division Demultiplexer with 1 input port and 4 output ports. In this context, number of output ports sets the number of channels.
+    description: |
+      A 1-to-4 wavelength (de-)multiplexer designed using a binary tree of cascaded Mach-Zehnder-like
+      lattice filters. This device is engineered to function as a coarse wavelength division multiplexing (cWDM)
+      filter for optical data communication.
+    reference: https://opg.optica.org/oe/fulltext.cfm?uri=oe-21-10-11652&id=253305
+    labels:
+      - Wavelength Division Demultiplexer
+      - active
+      - Thermo-optic effect (TO)
+    Insertion loss: 2 dB
+    Extinction ratio: 25 dB
+    Drive voltage/power: 0.75 V
+    Footprint Estimate: na
+
+  nodes:
+    N1:
+      component: mzi_1x2_pindiode_cband
+      params:
+        length: 100
+        delta_length: 200
+        # voltage:
+      properties:
+        ports: 1x2
+      placement:
+        X:
+        Y:
+        Rotation: 0
+    N2:
+      component: mzi_1x2_pindiode_cband
+      params:
+        length: 100
+        delta_length: 100
+        # voltage:
+      properties:
+        ports: 1x2
+      placement:
+        X:
+        Y:
+        Rotation: 0
+    N3:
+      component: mzi_1x2_pindiode_cband
+      params:
+        length: 100
+        delta_length: 100
+        # voltage:
+      properties:
+        ports: 1x2
+      placement:
+        X:
+        Y:
+        Rotation: 0
+  edges:
+    E1:
+      link: N1,2:N2,1
+      properties:
+        type: route
+        constraints:
+
+    E2:
+      link: N1,3:N3,1
+      properties:
+        type: route
+        constraints:
+
+  properties:
+    ports: 1x4
+    pdk: cband
+    specs:
+      wavelengths:
+        value: [1550, 1551, 1552, 1553]
+        comment: nm, range 1530-1565
+    optimizer:
+      error_fn: cosine
+      sparam:
+        - S31
+        - S41
+      free_params:
+        passive:
+          - N1.delta_length
+          - N2.delta_length
+          - N3.delta_length
+        # active:

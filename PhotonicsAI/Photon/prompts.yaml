@@ -1,0 +1,573 @@
+edges_yaml_to_dot: |
+  According the PROMPT, write edges for the input DOT graph. Nodes are have a rectangular shape.
+  Port are labelled as o1, o2, o3 etc, and they are ordered counter-clockwise around the rectangle node.
+  For example a 2x3 node has o1 (left-bottom), o2 (left-top), o3 (right-top), o4 (right-middle), o5 (right-bottom).
+  It is important that the edges don't cross. You should reason about what the spatial location of ports around the
+  rectangular nodes and make sure the edges are not crossing.
+  Define only one edge between any two nodes, counting all node ports.
+  Do not connect a node to itself, unless explicitly prompted.
+  Format your output in YAML with two sections: reasoning and edges.
+  Do not add preambles (like ```yaml); only output the YAML.
+  Here's an example:
+  PROMPT: connect a 2x2 mzi with heater to a directional coupler.
+  2x2 MZI with heater is C1: dc_mzi_2x2_heater_doped_si_cband. directional coupler is C2: _directional_coupler.
+  DOT graph:
+  graph new_circuit {
+    rankdir=LR;
+    node [shape=record];
+    C1 [label="{{<o2> o2|<o1> o1} | C1: dc_mzi_2x2_heater_doped_si_cband | {<o3> o3|<o4> o4}}"];
+    C2 [label="{{<o2> o2|<o1> o1} | C2: _directional_coupler | {<o3> o3|<o4> o4}}"];
+  }
+
+  OUTPUT:
+  reasoning: |
+    We need to connect C1 (dc_mzi_2x2_heater_doped_si_cband) to C2 (_directional_coupler) without any edge crossing.
+    C1 has two output ports: C1:o3 (right-top) and C1:o4 (right-bottom).
+    C2 has two input ports: C1:o1 (left-bottom) and C1:o2 (left-top).
+    To write edges that are not crossing we
+    1. Connect C1:o3 to C2:o2
+    2. Connect C1:o4 to C2:o1
+
+  edges: |
+    C1:o3 -- C2:o2;
+    C1:o4 -- C2:o1;
+
+dot_verify: |
+  Input is a yaml DOT graph.
+  Each node has some ports labelled as o1, o2 etc.
+  Check this condition:
+  The graph should have only one edge between any two nodes, counting all of their ports. Edges are defined using the syntax (C1:o3 -- C2:o2). 
+  If there is only one node there should most often be no edges.
+
+  If necessary, modify the input DOT graph to satisfy these conditions. Do not add additional nodes under any circumstances.
+  Do not output any text beyond the DOT code to generate a single valid DOT graph. Output should not contain any preamble like ```dot.
+
+yaml_syntax_cleaner: |
+  You are a YAML syntax cleaner. Your task is to clean up and correct
+  the provided YAML strings according to the following rules:
+  1. Ensure there are no syntactical errors such as redundant fields, indentation errors, or invalid fields.
+  2. Only the following high-level fields are acceptable:
+  ['name', 'instances', 'placements', 'connections', 'ports', 'routes', 'pdk', 'warnings'].
+  3. Remove any fields not in the acceptable list.
+  4. Return only the updated YAML string, do not add preambles (like```yaml).
+
+  Here is an example of a valid YAML string:
+
+  reasoning: >
+    We have three components: C1 (mmi2x2), C2 (pn_diode), and C3 (pn_diode).
+  instances:
+    C1:
+      component: _mmi1x2
+      info:
+        ports: 1x2
+      settings:
+        length_mmi: 5.5
+    C2:
+      component: dc_mzi_2x2_heater_doped_si_cband
+      info: {ports: 2x2}
+      settings:
+        length: 5.5
+    C3:
+      component: dc_mzi_2x2_heater_doped_si_cband
+      info: {ports: 2x2}
+  placements:
+    C1:
+      x: 0
+      y: 0
+    C2:
+      x: 0
+      y: 0
+    C3:
+      x: 0
+      y: 0
+  routes:
+    optical:
+      links:
+        C1,o4: C2,o1
+        C1,o3: C3,o1
+  name: new_circuit
+
+  Please clean up the following YAML string according to the rules mentioned above:
+
+dot_simple: |
+  Based on the input YAML code, generate a Graphviz dot graph for a circuit.
+  Each component is a node. Node labels should be short and simple (discard extra info) and enumerated (if same node is repeated).
+  Edges are described in circuit_instructions.
+  Use undirected graphs with rankdir=LR.
+  Do not explain; only output the graph.
+  Do not preamble with "```dot".
+
+  EXAMPLE INPUT:
+  brief_summary: The configuration includes a 1x2 beam splitter
+    connected to two Mach-Zehnder Interferometer (MZI) modulators.
+  circuit_instructions: The beamsplitter is connected to both
+    modulators.
+  components_list:
+    - 1x2 beamplitter
+    - MZI modulator with a length of 150 and using heater
+    - MZI modulator with a length of 120 and using heater
+  title: 1x2 Beam Splitter with MZI Modulators
+
+  OUTPUT:
+  graph G {
+      rankdir=LR;
+      beamsplitter [label="1x2 Beamsplitter"];
+      modulator1 [label="MZI Modulator 1"];
+      modulator2 [label="MZI Modulator 2"];
+
+      beamsplitter -- modulator1;
+      beamsplitter -- modulator2;
+  }
+
+
+# interpreter_classify: |
+#   You are an assistant to a photonic engineer.
+#   Your task is to classify the input text into one of these categories:
+#   Cat 1: A description of one or many photonic components/devices potentially forming a circuit.
+#   Or a prompt to design/layout a photonic circuit/GDS.
+#   Cat 2: A generic question about integrated photonic, or photonic devices/components.
+#   Cat 3: A prompt to simulate modes, for a waveguide, or its band diagram.
+#   Cat 4: Not relevant to integrated photonics.
+
+#   If the category is 1, extract the described components (include all provided specifications, if any) from the input text.
+#   This might be only one component, or many different components.
+#   If the input text describes many copies of the same component, list of them explicitly.
+#   Answer in YAML. Do not explain or add preambles (like quotation marks).
+
+#   Here are a few examples:
+#   Example1: A low loss 1x2 power splitter connected to two GHz modulators.
+#   cat: 1
+#   components:
+#     C1: low loss 1x2 power splitter
+#     C2: GHz modulator
+#     C3: GHz modulator
+
+#   Example2: What is a transceiver?
+#   cat: 2
+
+#   Example3: A 2x2 MZI with 1 GHz bandwidth.
+#   cat: 1
+#   components:
+#     C1: 2x2 MZI with 1 GHz bandwidth
+
+#   Example4: How many devices do you have in your database?
+#   cat: 4
+
+#   Example5: A transceiver with four channels and 20 GHz bandwidth.
+#   cat: 2
+#   components:
+#     C1: transceiver with four channels and 20 GHz bandwidth
+
+#   Example6: Simulate mode of a SOI waveguide
+#   cat: 3
+
+# interpreter_LLM_driven: |
+#   You are an assistant to a photonic circuit engineer.
+#   You have access to a database of circuit templates listed below as TEMPLATES-YAML.
+#   Each circuit templates has a "what" (describing what it is) and "how" (describing how it should be used) field.
+#   You will be prompted with an input list of components also in YAML syntax.
+#   Go thru this input component list and search for any component that is a match to a "what" TEMPLATE description (and not "how" field).
+#   If a match is found, follow the "how" field to replace the component according to the template.
+#   In your answer, do not explain or add preambles (like quotation marks).
+
+#   Here's an example:
+#   INPUT:
+#   cat: 1
+#   components:
+#     C1: four channel WDM
+#     C2: grating coupler
+#     C3: grating coupler
+#     C4: grating coupler
+#     C5: grating coupler
+#   OUTPUT:
+#   cat: 1
+#   components:
+#     mzi1: mzi_2x2_heater_tin_cband with length 100
+#     mzi2: mzi_2x2_heater_tin_cband with length 101
+#     mzi3: mzi_2x2_heater_tin_cband with length 102
+#     C2: grating coupler
+#     C3: grating coupler
+#     C4: grating coupler
+#     C5: grating coupler
+
+#   TEMPLATES-YAML: \n
+
+# interpreter_template_search: |
+#   You are an assistant to a photonic circuit engineer.
+#   The following YAML string contains all available circuit templates.
+#   When your are prompted, search thru this YAML list and select a match, if any.
+#   Only output the YAML key of the selected template.
+#   If no template matches the input, output None.
+#   In your answer, do not explain or add preambles (like quotation marks).
+
+#   YAML: \n\n
+
+# interpreter_template_parse: |
+#   You are an assistant to a photonic circuit engineer.
+#   Follow the INSTRUCTIONS to parse the INPUT text and generate a list of components (include all provided specifications, if any).
+#   Answer in YAML only with two fiels: components and comments.
+#   Comments is a string and should include your reasoning and a copy of instructions, specially how ports of different components are connected.
+#   Components is a dict of strings that describes components extracted from the input text.
+#   Do not add preambles (like quotation marks).
+
+#   Here's an example:
+#   INSTRUCTIONS:
+#   This is instructions for a wavelength Division Multiplexing (WDM).
+#   If asked for with 3 or 4 channels/outputs/ports:
+#   Take three mzi_2x2_heater_tin_cband (mzi1 with length=100) (mzi2 with length=110) (mzi3 with length=130).
+#   Connect one output port of mzi1 to mzi2, and the other output port of mzi1 to mzi3.
+#   INPUT: a four channel wdm
+#   OUTPUT:
+#   comments: Input describes a four channel WDM that we replace with mzi1, mzi2, mzi3. Connect one output port of mzi1 to mzi2, and the other output port of mzi1 to mzi3.
+#   components:
+#     mzi1: mzi_2x2_heater_tin_cband with length 100
+#     mzi2: mzi_2x2_heater_tin_cband with length 101
+#     mzi3: mzi_2x2_heater_tin_cband with length 102
+
+# interpreter_relabel_netlist: |
+#   You are an assistant to a photonic circuit engineer.
+#   The INPUT is a YAML netlist for a circuit.
+#   The "components" field is an ordered list of components. They should be labelled as C1, C2, C3, etc.
+#   Relabel the components in the "components" field while maintaining their original order.
+#   The "comments" field might refer to the original labels. Update the comments accordingly.
+#   Output the updated YAML. Do not add preambles (like quotation marks).
+
+# guard: |
+#   You are an assistant to a photonic engineer.
+#   Your task is to determine if the input text is a description of a photonic device or circuit; if so output True.
+#   Otherwise (if the input was a generic text of description of other things), output False.
+#   Answer with True of False. Do not explain or add preambles (like quotation marks).
+
+#   Here's a True example:
+#   Input Text: A low loss 1x2 power splitter connected to two GHz modulators.
+#   True
+
+#   Here's a False example:
+#   Input Text: what is in your database?
+#   False
+
+# parse0: |
+#   You are a helpful assistant to a photonic engineer.
+#   Extract the described components from the input text. This might be only one component, or many different components.
+#   If the input text describes many copies of the same component, list of them explicitly.
+#   Output the extracted component(s) as a YAML object. For each component, include all provided specifications (if any) in the component name.
+#   Do not explain or add preambles (like quotation marks).
+
+#   Here's an example:
+#   Input Text: Three nodes: a 1x2 beamplitter with loss insersion loss, and two MZI modulators with GHz bandwidths. Ports o2 and o3 of the beamsplitter are connected to modulators.
+#   components:
+#     C1: 1x2 beamplitter with loss insertion loss
+#     C2: MZI modulator with GHz bandwidth
+
+# classify: |
+#   You are a helpful assistant to a photonic engineer.
+#   Extract the described components from the input text. This might be only one component, or many different components.
+#   If the input text describes many copies of the same component, only count it once.
+#   Output the extracted component(s) as a YAML object. For each component, include all provided specifications (if any) in the component name.
+#   Do not explain or add preambles (like quotation marks).
+
+#   Here's an example:
+#   Input Text: Three nodes: a 1x2 beamplitter with loss insersion loss, and two MZI modulators with GHz bandwidths. Ports o2 and o3 of the beamsplitter are connected to modulators.
+#   components:
+#     C1: 1x2 beamplitter with loss insertion loss
+#     C2: MZI modulator with GHz bandwidth
+
+absorb_settings: |
+  You are an assistant to a photonic engineer.
+  The have an INPUT DESCRIPTION and a NETLIST.
+  Your task is:
+  - Find the instances (C1, C2, ...) in INPUT DESCRIPTION
+  - If the description provides any specification:
+    - Find the same instance in NETLIST and check if it has a corresponding settings. If so, update the settings in NETLIST.
+    Also add your reasoning in in the comments field.
+    - If the instance does not have a corresponding settings, add a note in comments.
+  - Do not modify any other fields of the NETLIST.
+  - Do not add preambles (like ```yaml); only output the YAML.
+  - Separate the comment field from the NETLIST with a blank line (i.e. '\n').
+  - Field names and values must be separated by a colon and a space.
+  - The comment field value must not include any colons.
+
+  Here's an example:
+  INPUT DESCRIPTION:
+    - 1x2 MMI for 1310 nm and a length of 40 um
+
+  NETLIST:
+  N1:
+    component: _mmi1x2
+    info:
+      ports: 1x2
+    settings:
+      length_mmi: 5.5
+
+  OUTPUT:
+  comment: The length of the C1 is 40 um. Could not find the wavelength setting.
+  N1:
+    component: _mmi1x2
+    info:
+      ports: 1x2
+    settings:
+      length_mmi: 40
+
+# yaml_netlist: |
+#   You are an assistant to a photonic engineer.
+#   You task is to generate a YAML netlist for a circuit described in the input text.
+#   First create the list of components (labelled C1, C2, C3, etc.) with their port information.
+#   For each component, use the following format: C1: component_name with info: {ports: [input]x[output]}.
+#   The output YAML should have only three sections: instances, name, and reasoning.
+#   In reasoning field, you should reason how to accurately write the components to represent the input text.
+#   Do add preambles (like quotation marks); only output the YAML.
+
+#   Example:
+#   INPUT PROMPT: A low loss 2x2 power splitter connected to two GHz modulators.
+#   For "2x2 power splitter with low loss" use "_mmi2x2", with info: {ports: 2x2}.
+#   For "GHz modulator" use "pn_diode", with info: {ports: 1x1}.
+#   OUTPUT:
+#   reasoning:
+#     We have three components in total. One "_mmi2x2" and two "pn_diode".
+#   instances:
+#     C1:
+#       component: _mmi2x2
+#       info: {ports: 2x2}
+#     C2:
+#       component: pn_diode
+#       info: {ports: 1x1}
+#     C3:
+#       component: pn_diode
+#       info: {ports: 1x1}
+#   name: new_circuit
+
+# yaml_netlist_CoT: |
+#   You are an assistant to a photonic engineer.
+#   You task is to generate a YAML netlist for a circuit described in the input text.
+#   First create the list of components (labelled C1, C2, C3, etc.) with their port information.
+#   For each component, use the following format: C1: component_name with info: {ports: [input]x[output]}.
+#   For example a 2x2 component has two input ports (o1 and o2) and two output ports (o3 and o4).
+#   Then, use the port information to create the connections between the components.
+#   To specify the connections, use the following format: C1,o{output port #}: C2,o{input port #}.
+#   You should count the ports (like o1, o2, o3, etc.) to make sure they are connected appropriately.
+#   You should reason through the connections to make sure they are accurate and add a reasoning field to the YAML.
+#   Ports cannot have multiple connections.
+#   Do not explain or add preambles (like quotation marks); only output the YAML.
+
+#   Example:
+#   Input Text: A low loss power splitter connected to two 2x2 modulators.
+#   For "power splitter with low loss" use "mmi1x2", with info: {ports: 1x2}.
+#   For "2x2 modulator" use "dc_mzi_2x2_heater_doped_si_cband", with info: {ports: 2x2}.
+#   reasoning: >
+#     We have three components: C1 (mmi2x2), C2 (pn_diode), and C3 (pn_diode).
+#     C1 has one input port (o1) and two output ports (o2 ando3).
+#     C2 has two input ports (o1, o2) and two output ports (o3, o4).
+#     C3 has two input ports (o1, o2) and two output ports (o3, o4).
+#     C1 is connected to C2 and C3.
+#     C1 has two output ports: C1,o2 and C1,o3.
+#     We connect C1,o2 to the first unused input port of C2: C2,o1.
+#     We connect C1,o3 to the first unused input port of C3: C2,o1.
+#   instances:
+#     C1:
+#       component: mmi1x2
+#       info: {ports: 1x2}
+#     C2:
+#       component: dc_mzi_2x2_heater_doped_si_cband
+#       info: {ports: 2x2}
+#     C3:
+#       component: dc_mzi_2x2_heater_doped_si_cband
+#       info: {ports: 2x2}
+#   placements:
+#     C1:
+#       x: 0
+#       y: 0
+#     C2:
+#       x: 0
+#       y: 0
+#     C3:
+#       x: 0
+#       y: 0
+#   routes:
+#     optical:
+#       links:
+#         C1,o4: C2,o1
+#         C1,o3: C3,o1
+#   name: new_circuit
+
+# netlist_components: |
+#   You are an assistant to a photonic engineer.
+#   Your task is to generate a YAML component list for a circuit based on the input text.
+#   Fllow the template of the example below. Do not add novel properties.
+#   Do not explain or add preambles (like quotation marks); only output the YAML.
+
+#   Example:
+#   Input Text: A low loss 2x2 power splitter connected to two GHz modulators.
+#   For "2x2 power splitter with low loss" use "mmi2x2", with info: {ports: 2x2}.
+#   For "GHz modulator" use "pn_diode", with info: {ports: 1x1}.
+#   name: new_circuit
+#   instances:
+#     C1:
+#       component: mmi2x2
+#       info: {ports: 2x2}
+#     C2:
+#       component: pn_diode
+#       info: {ports: 1x1}
+#     C3:
+#       component: pn_diode
+#       info: {ports: 1x1}
+
+# netlist_connections: |
+#   You are an assistant to a photonic engineer.
+#   Your task is to generate a YAML list detailing circuit connections based on the input text.
+#   We use this notion to specify number of ports: [input]x[output].
+#   We label ports as o1, o2, o3, etc. Start with input ports and then continue with output ports.
+#   For example:
+#   - a component with 2x2 ports has two input ports (o1 and o2) and two output ports (o3 and o4).
+#   - a component with 1x4 ports has one input port (o1) and four output ports (o2, o3, o4, o5).
+
+#   Fllow the template of the example below. Do not add novel properties.
+#   Do not explain or add preambles (like quotation marks); only output the YAML.
+
+#   Here's an example:
+#   Input Text:
+#   A low loss 2x2 power splitter connected to two GHz modulators.
+#   For "2x2 power splitter with low loss" use "C1" with 2x2 ports. For "GHz modulator" use "C2" "C3" with 1x1 ports.
+#   connections:
+#     C1,o4: C2,o1
+#     C1,o3: C3,o1
+
+# verify_netlist: |
+#   This is a YAML netlist for a photonic circuit:
+#   <YAML NETLIST>
+#   {netlist}
+#   </YAML NETLIST>
+
+#   Pay attention to "connections:" section and how the ports are labelled and connected.
+#   We use this notion to specify number of ports: [input]x[output].
+#   For example a 2x2 component has two input ports (o1 and o2) and two output ports (o3 and o4).
+
+#   It should be generated based on the following components:
+#   {c_}.
+
+#   Verify of the netlist is accurate and matches the list of components. Answer by a single word: True or False. Don't explain.
+
+# dot: |
+#   Convert the YAML netlist to a Graphviz DOT representation following these rules:
+#   Use new_circuit" as the graph name.
+#   Each instance should be represented as a node with a label that includes its ports and component type.
+#   Use this template for labelling: {{input_ports} | node_name | {output_ports}}.
+#   Nodes should have a rectangular shape (shape=record).
+#   Port labelling should strictly follow counter-clockwise around the rectangles as:
+#   left-bottom -> left-top -> right-top -> right-bottom.
+#   Follow the explanation in the reasoning field to understand the port labelling and connections.
+#   The connections field specifies edges between ports of the instances.
+#   Each port can only be connected to one other port.
+#   The graph should be left-to-right directed (rankdir=LR).
+#   Do not explain; only output the graph. Do not preamble with "```dot".
+
+#   Here's an example:
+#   INPUT:
+#   reasoning: >
+#     We have three components: C1 (mmi2x2), C2 (pn_diode), and C3 (pn_diode).
+#     C1 has two input ports (o1, o2) and two output ports (o3 and o4).
+#     C2 has one input port (o1) and one output port (o2).
+#     C3 has one input port (o1) and one output port (o2).
+#     C1 is connected to C2 and C3.
+#     We connect output ports of C1 (o3, o4) to input port of C2 (o1) and input port of C3 (o1).
+#   instances:
+#     C1:
+#       component: mmi1x2
+#       info: {ports: 1x2}
+#     C2:
+#       component: pn_diode
+#       info: {ports: 2x1}
+#     C3:
+#       component: pn_diode
+#       info: {ports: 2x1}
+#   connections:
+#     C1,o2: C2,o1
+#     C1,o3: C3,o1
+#   name: new_circuit
+
+#   OUTPUT:
+#   graph new_circuit {
+#     rankdir=LR;
+#     node [shape=record];
+
+#     C1 [label="{{<o1> o1} | C1: mmi1x2 | {<o2> o2|<o3> o3}}"];
+#     C2 [label="{{<o2> o2|<o1> o1} | C2: pn_diode |{<o3> o3}}"];
+#     C3 [label="{{<o2> o2|<o1> o1} | C3: pn_diode |{<o3> o3}}"];
+
+#     C1:o2 -- C2:o1;
+#     C1:o3 -- C3:o1;
+#   }
+
+# dot_simple1: |
+#   Convert the YAML netlist to a Graphviz DOT representation following these rules:
+#   The name field in the YAML is used as the graph's name.
+#   Each instance should be represented as a node with a label. Ignore the ports.
+#   The connections field specifies edges between ports of the instances.
+#   Do not explain; only output the graph. Do not preamble with "```dot".
+
+#   Here's an example:
+#   INPUT:
+#   connections:
+#     C1,o4: C2,o1
+#     C1,o3: C3,o1
+#   instances:
+#     C1:
+#       component: mmi2x2
+#       info: {ports: 2x2}
+#     C2:
+#       component: pn_diode
+#       info: {ports: 1x1}
+#     C3:
+#       component: pn_diode
+#       info: {ports: 1x1}
+#   name: new_circuit
+
+#   OUTPUT:
+#   graph new_circuit {
+#     C1 [label="C1: mmi2x2"];
+#     C2 [label="C2: pn_diode"];
+#     C3 [label="C3: pn_diode"];
+
+#     C1 -- C2;
+#     C1 -- C3;
+#   }
+
+# repair_dot_ports: |
+#   Input is a Graphviz DOT code. It is not following the template described below. Fix it.
+#   All nodes should have ports specified in their labels.
+#   The nodes should be labelled following template: {{input_ports} | node_name | {output_ports}}.
+#   Nodes are have a rectangular shape.
+#   Port labelling should strictly follow counter-clockwise around the rectangles as:
+#   left-bottom -> left-top -> right-top -> right-bottom.
+
+#   Valid node label examples:
+#   - "{{<o2> o2|<o1> o1} | C3: pn_diode |{<o3> o3}}"
+#   - "{{<o2> o2|<o1> o1} | C3: pn_diode |{<o3> o3|<o4> o4}}"
+#   - "{{<o1> o1} | C3: pn_diode |{<o2> o2|<o3> o3}}"
+
+#   Invalid node label examples:
+#   - "{{<o1> o1|<o2> o2} | C3: pn_diode |{<o3> o3}}"
+#   - "{{<o4> o4|<o3> o3} | C3: pn_diode |{<o1> o1|<o2> o2}}"
+#   - "{{<o1> o1} | C3: pn_diode |{<o3> o3|<o2> o2}}"
+
+#   Modify the input DOT code to follow described template.
+#   Do not explain; only output the corrected DOT code. Do not preamble with "```dot".
+
+# repair_dot_edges_bad: |
+#   Input is a Graphviz DOT code.
+#   The graph has some edges crossing.
+#   It should form a planar graph with NO edges crossing.
+#   Fix it by ONLY modifying the edge connections.
+#   Nodes are rectangular and have ports specified in their labels.
+#   This is the label template: {{input_ports} | node_name | {output_ports}}.
+#   Ports labelling follows counter-clockwise around the rectangles as:
+#   left-bottom -> left-top -> right-top -> right-bottom.
+
+#   Modify the edge connections to have NO edges crossing. Do not modify the nodes or their ports.
+#   Do not explain; only output the corrected DOT code. Do not preamble with "```dot".
+
+# repair_dot_edges: |
+#   This is a dot graph.
+#   The nodes have ports labelled as o1, o2,... and the edges are strictly connect two ports like C1:o3 -- C2:o1.
+#   This graph has crossing edges. Modify the edges to fix this. Do not modify the Nodes or the ports.
+#   You can add comments to the code to understand the ports and how the edges should be modifies.
+#   Do not output any text outside the dot code. Do not preamble with "```dot".
