@@ -60,7 +60,7 @@ graphviz==0.20.3
 grpcio==1.70.0
 grpcio-status==1.70.0
 h11==0.14.0
-h5netcdf==1.0.2
+h5netcdf==1.6.4
 h5py==3.14.0
 hf-xet==1.1.5
 html5rdf==1.2.1
