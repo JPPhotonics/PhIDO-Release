@@ -9,7 +9,7 @@ ports: 2x2
 NodeLabels:
     - modulator
     - active
-    - phase modulation (AM)
+    - amplitude modulation (AM)
 aka: amplitude modulator, PN Junction
 Technology : Plasma Dispersion Effect (PD)
 Design wavelength: 1450-1650 nm
