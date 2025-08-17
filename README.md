@@ -79,6 +79,8 @@ DEEPSEEK_API_KEY='your-deepseek-api-key'
 NVIDIA_API_KEY='your-nvidia-nim-api-key'
 ```
 
+Create a `log` folder under `PhIDO-Release/PhotonicsAI/`.
+
 ## 🤖 Supported LLM Models
 
 PhIDO supports multiple LLM providers through the `llm_api.py` module, LLM selection is configured at the beginning of `webapp.py` script. The user may run different LLMs at each step of PhIDO, provided that the models' API keys are configured within the environmental variables:
