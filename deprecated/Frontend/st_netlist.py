@@ -103,7 +103,7 @@ def call_fireworks(prompt, sys_prompt, _model="llama-v3-70b-instruct"):
     elif _model == "qwen2-72b-instruct":
         model = "accounts/fireworks/models/qwen2-72b-instruct"
 
-    client = Fireworks(api_key="n4SbOjxiQ8xaemar8YsHAsugFQl13GSakT7RuoWdnywSrPX7")
+    client = Fireworks(api_key=os.getenv("FIREWORKS_API_KEY"))
     response = client.chat.completions.create(
         model=model,
         temperature=0.1,
