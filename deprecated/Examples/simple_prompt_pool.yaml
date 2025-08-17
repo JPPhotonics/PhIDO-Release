@@ -1,0 +1,98 @@
+0:
+  prompt: Find a MMI 1x2 that operates at a wavelength of 1550 nm.
+  spec:
+    function: MMI 1x2
+    wavelength: 1550 nm
+    bandwidth:
+    polarization:
+    loss:
+
+1:
+  prompt: Give me the design of a TE grating coupler that couples 1310 nm light onto the chip.
+  spec:
+    function: Grating Coupler
+    wavelength: 1310 nm
+    bandwidth:
+    polarization: TE
+    loss:
+
+2:
+  prompt: Give me a design for a 1x2 MMI for 1310 nm.
+  spec:
+    function: MMI 1x2
+    wavelength: 1310 nm
+    bandwidth:
+    polarization:
+    loss:
+
+3:
+  prompt: I need a grating coupler design for TE polarized light operating at 1550 nm.
+  spec:
+    function: Grating Coupler
+    wavelength: 1550 nm
+    bandwidth:
+    polarization: TE
+    loss:
+
+4:
+  prompt: Find an edge coupler that operates at a wavelength of 1535 nm.
+  spec:
+    function: Edge Coupler
+    wavelength: 1535 nm
+    bandwidth:
+    polarization:
+    loss:
+
+5:
+  prompt: Give the design of a 50-50 directional coupler optimized for 1550 nm.
+  spec:
+    function: Directional Coupler
+    wavelength: 1550 nm
+    bandwidth:
+    polarization:
+    loss:
+
+6:
+  prompt: Develop a layout for an MZI at 1310 nm.
+  spec:
+    function: MZI
+    wavelength: 1310 nm
+    bandwidth:
+    polarization:
+    loss:
+
+7:
+  prompt: Layout an edge coupler at 1550 nm where the taper length = 200.0 um.
+  spec:
+    function: Edge Coupler
+    wavelength: 1550 nm
+    bandwidth:
+    polarization:
+    loss:
+
+8:
+  prompt: Layout a demultiplexer filter for 1325 nm with a bandwidth of 1 nm.
+  spec:
+    function: demultiplexer filter
+    wavelength: 1325 nm
+    bandwidth: 1 nm
+    polarization:
+    loss:
+
+9:
+  prompt: Layout a wavelength filter for 1290 nm with a maximum loss of 3 dB.
+  spec:
+    function: demultiplexer filter
+    wavelength: 1290 nm
+    bandwidth:
+    polarization:
+    loss: 3 dB
+
+10:
+  prompt: Layout a wavelength filter for green wavelengths with a bandwidth of 10 THz.
+  spec:
+    function: wavelength filter
+    wavelength: green wavelengths
+    bandwidth: 10 THz
+    polarization:
+    loss:

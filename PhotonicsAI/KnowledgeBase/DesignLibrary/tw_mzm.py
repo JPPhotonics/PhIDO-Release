@@ -98,7 +98,7 @@ def tw_mzm(
     return c
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     """The model."""
     return {"tw_mzm": straight.get_model_fdtd}
 

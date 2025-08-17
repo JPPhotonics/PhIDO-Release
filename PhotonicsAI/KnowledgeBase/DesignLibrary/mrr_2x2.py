@@ -45,7 +45,7 @@ def mrr_2x2(gap: float = 0.2, radius: float = 10) -> gf.Component:
     return c
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     """Get the model for the edge coupler."""
     m1 = _mmi1x2.get_model(model=model)
     m2 = straight.get_model(model=model)

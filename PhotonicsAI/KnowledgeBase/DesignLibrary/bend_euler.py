@@ -18,7 +18,7 @@ import gdsfactory as gf
 import numpy as np
 import sax
 
-from PhotonicsAI.Photon.utils import get_file_path, model_from_npz
+from PhotonicsAI.Photon.utils import get_file_path, model_from_npz, model_from_tidy3d
 
 # from PhotonicsAI.Photon.utils import validate_cell_settings
 
@@ -32,15 +32,14 @@ from PhotonicsAI.Photon.utils import get_file_path, model_from_npz
 #     }
 # }
 
-
-@gf.cell
+@gf.cell()
 def bend_euler(
-    radius: float = 10.0,
-    angle: float = 90.0,
+    radius: float = 10.01,
+    angle: float = 90.01,
     p: float = 0.5,
     npoints: int = 500,
     width: float = 0.5,
-    cross_section: gf.typings.CrossSectionSpec = "strip",
+    cross_section: gf.typings.CrossSectionSpec = "strip"
 ) -> gf.Component:
     """This is a bend (or generally arc shaped) waveguide, with an Euler curvature."""
     # geometrical_params = get_params(settings)
@@ -51,7 +50,7 @@ def bend_euler(
     c.add_port("o1", port=ref.ports["o1"])
     c.add_port("o2", port=ref.ports["o2"])
 
-    # c = c.flatten() # this gives an error!
+    #c.flatten() # this gives an error!
     return c
 
 
@@ -78,12 +77,28 @@ def bend_euler(
 #     return output_params
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     """This is a model."""
     if model == "ana":
         return {"bend_euler": get_model_ana}
     if model == "fdtd":
         return {"bend_euler": get_model_fdtd}
+    if model == "tidy3d":
+        return {"bend_euler": get_model_tidy3d}
+
+
+def get_model_tidy3d(wl=1.55):
+    try:
+        with open('build/modified_netlist.yml', 'r') as file:
+            modified_netlist = yaml.safe_load(file)
+        if "bend_euler" in modified_netlist.split():
+            c = gf.read.from_yaml(modified_netlist)
+        else:
+            c = bend_euler()
+    except:
+        c = bend_euler()
+    model_data = model_from_tidy3d(c=c)
+    return model_data(wl=wl)
 
 
 def get_model_fdtd(wl=1.55, radius=10, angle=90):

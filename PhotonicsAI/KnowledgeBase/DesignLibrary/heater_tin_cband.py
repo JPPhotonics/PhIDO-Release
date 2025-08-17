@@ -90,7 +90,7 @@ def heater_tin_cband(
     return c
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     """Get the model for the edge coupler."""
     return {"heater_tin_cband": straight.get_model_fdtd}
 

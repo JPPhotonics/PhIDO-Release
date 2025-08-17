@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Project App</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+
+<body>
+    <div class="container-fluid h-100">
+        <div class="row no-gutters h-100">
+            <div class="col-4 p-2">
+                <div class="box chat-box">
+                    <div id="chat-messages"></div>
+                    <form id="chat-form">
+                        <textarea id="chat-input" name="message" placeholder="Type your message..." rows="3"></textarea>
+                    </form>
+                </div>
+            </div>
+            <div class="col-8 p-2">
+                <div class="box output-box" id="output1">
+                    <div class="accordion" id="accordionOutput">
+                        <!-- Accordion items will be dynamically added here -->
+                    </div>
+                    <div id="button-container">
+                        <button class="btn btn-secondary mt-2" onclick="submitText('Hello')">Say Hello</button>
+                        <button class="btn btn-secondary mt-2" onclick="submitText('How are you?')">Ask How Are You</button>
+                        <button class="btn btn-secondary mt-2" onclick="submitText('Goodbye')">Say Goodbye</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        var socket = io();
+
+        document.getElementById('chat-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        function sendMessage() {
+            var chatInput = document.getElementById('chat-input');
+            var message = chatInput.value;
+            if (message.trim() !== '') {
+                socket.emit('send_message', { message: message });
+                chatInput.value = '';
+
+                // Hide all buttons after sending a message
+                document.getElementById('button-container').style.display = 'none';
+            }
+        }
+
+        function submitText(text) {
+            var chatInput = document.getElementById('chat-input');
+            chatInput.value = text;
+            sendMessage();
+        }
+
+        socket.on('new_message', function(data) {
+            // Update chat messages to show only the last message
+            document.getElementById('chat-messages').innerHTML = '<p>' + data.message + '</p>';
+            // Add processed output to the accordion
+            addAccordionItem('Processed Output', data.processed_output);
+        });
+
+        socket.on('additional_output', function(data) {
+            // Add additional output to the accordion
+            addAccordionItem('Additional Output', data.additional_output);
+        });
+
+        function addAccordionItem(title, content) {
+            var accordion = document.getElementById('accordionOutput');
+            var itemId = 'accordion-item-' + accordion.children.length;
+
+            var accordionItem = `
+                <div class="card bg-dark text-white">
+                    <div class="card-header" id="heading-${itemId}">
+                        <h2 class="mb-0">
+                            <button class="btn btn-link text-white" type="button" data-toggle="collapse" data-target="#collapse-${itemId}" aria-expanded="true" aria-controls="collapse-${itemId}">
+                                ${title}
+                            </button>
+                        </h2>
+                    </div>
+                    <div id="collapse-${itemId}" class="collapse" aria-labelledby="heading-${itemId}">
+                        <div class="card-body">
+                            ${marked.parse(content)}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            accordion.insertAdjacentHTML('beforeend', accordionItem);
+        }
+    </script>
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
+
+</html>

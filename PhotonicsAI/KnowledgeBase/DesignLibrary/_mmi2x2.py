@@ -24,7 +24,7 @@ import sax
 # from PhotonicsAI.Photon.utils import validate_cell_settings
 from gdsfactory.typings import CrossSectionSpec
 
-from PhotonicsAI.Photon.utils import get_file_path, model_from_npz
+from PhotonicsAI.Photon.utils import get_file_path, model_from_npz, model_from_tidy3d
 
 # args = {
 #     'functional': {
@@ -43,8 +43,8 @@ from PhotonicsAI.Photon.utils import get_file_path, model_from_npz
 @gf.cell
 def _mmi2x2(
     width: float | None = None,
-    width_taper: float = 1.0,
-    length_taper: float = 10.0,
+    width_taper: float = 1.01,
+    length_taper: float = 10.01,
     length_mmi: float = 5.5,
     width_mmi: float = 2.5,
     gap_mmi: float = 0.25,
@@ -53,6 +53,8 @@ def _mmi2x2(
     _args = locals()
 
     c = gf.Component()
+    print("THESE ARE THE THE ARGS")
+    print(_args)
     m = gf.components.mmi2x2(**_args)
     coupler_r = c << m
 
@@ -100,11 +102,27 @@ def _mmi2x2(
 #     return output_params
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     if model == "ana":
         return {"_mmi2x2": get_model_ana}
     if model == "fdtd":
         return {"_mmi2x2": get_model_fdtd}
+    if model == "tidy3d":
+        return {"_mmi2x2": get_model_tidy3d}
+
+
+def get_model_tidy3d(wl=1.55):
+    try:
+        with open('build/modified_netlist.yml', 'r') as file:
+            modified_netlist = yaml.safe_load(file)
+        if "_mmi2x2" in modified_netlist.split():
+            c = gf.read.from_yaml(modified_netlist)
+        else:
+            c = _mmi2x2()
+    except:
+        c = _mmi2x2()
+    model_data = model_from_tidy3d(c=c)
+    return model_data(wl=wl)
 
 
 def get_model_fdtd(wl=1.55):

@@ -16,7 +16,9 @@ import gdsfactory as gf
 import numpy as np
 import sax
 
-from PhotonicsAI.Photon.utils import get_file_path, model_from_npz
+from PhotonicsAI.Photon.utils import get_file_path, model_from_npz, model_from_tidy3d
+
+import yaml
 
 
 @gf.cell
@@ -33,18 +35,32 @@ def _bend_s(
     return c
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     if model == "ana":
         return {"bend_s": get_model_ana}
     if model == "fdtd":
         return {"bend_s": get_model_fdtd}
+    if model == "tidy3d":
+        return {"bend_s": get_model_tidy3d}
 
+
+def get_model_tidy3d(wl=1.55):
+    try:
+        with open('build/modified_netlist.yml', 'r') as file:
+            modified_netlist = yaml.safe_load(file)
+        if "_bend_s" in modified_netlist.split():
+            c = gf.read.from_yaml(modified_netlist)
+        else:
+            c = _bend_s()
+    except:
+        c = _bend_s()
+    model_data = model_from_tidy3d(c=c)
+    return model_data(wl=wl)
 
 def get_model_fdtd(wl=1.55):
     file_path = get_file_path("FDTD/cband/bend_s/bend_s_size40__26_npoints99.npz")
     model_data = model_from_npz(file_path)
     return model_data(wl=wl)
-
 
 def get_model_ana(wl=1.55):
     # TODO: we need to find how long the curve is...
@@ -102,7 +118,11 @@ if __name__ == "__main__":
     print(c.get_netlist())
     print()
 
-    recnet = sax.RecursiveNetlist.model_validate(c.get_netlist(recursive=True))
+    sp = get_model_tidy3d()
+
+    print(sp)
+
+    """ recnet = sax.RecursiveNetlist.model_validate(c.get_netlist(recursive=True))
     print("Required Models ==>", sax.get_required_circuit_models(recnet))
 
     _c, info = sax.circuit(recnet, get_model())
@@ -110,4 +130,4 @@ if __name__ == "__main__":
     print(np.abs(_c(wl=1.35)["o1", "o2"]) ** 2)
 
     c.plot()
-    plt.show()
+    plt.show() """

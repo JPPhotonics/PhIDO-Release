@@ -15,6 +15,8 @@ import gdsfactory as gf
 import numpy as np
 import sax
 
+from PhotonicsAI.Photon.utils import get_file_path, model_from_npz, model_from_tidy3d
+
 # import pickle
 
 # from PhotonicsAI.Photon.utils import validate_cell_settings
@@ -30,7 +32,7 @@ import sax
 
 @gf.cell
 def edge_coupler(
-    length: float = 10.0,
+    length: float = 10.01,
     width1: float = 0.2,
     width2: float = 0.5,
     cross_section: gf.typings.CrossSectionSpec = "strip",
@@ -47,12 +49,28 @@ def edge_coupler(
     return c
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     """Get the model for the edge coupler."""
     if model == "ana":
         return {"edge_coupler": get_model_ana}
     if model == "fdtd":
         return {"edge_coupler": get_model_fdtd}
+    if model == "tidy3d":
+        return {"edge_coupler": get_model_tidy3d}
+
+
+def get_model_tidy3d(wl=1.55):
+    try:
+        with open('build/modified_netlist.yml', 'r') as file:
+            modified_netlist = yaml.safe_load(file)
+        if "edge_coupler" in modified_netlist.split():
+            c = gf.read.from_yaml(modified_netlist)
+        else:
+            c = edge_coupler()
+    except:
+        c = edge_coupler()
+    model_data = model_from_tidy3d(c=c)
+    return model_data(wl=wl)
 
 
 def get_model_fdtd(wl=1.5, length=10.0, neff=3.2) -> sax.SDict:

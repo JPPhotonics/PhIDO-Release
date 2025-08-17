@@ -25,6 +25,7 @@ from gdsfactory.typings import CrossSectionSpec
 
 from PhotonicsAI.KnowledgeBase.DesignLibrary import straight
 
+from PhotonicsAI.Photon.utils import get_file_path, model_from_npz, model_from_tidy3d
 
 @gf.cell
 def heater_doped_si_cband(
@@ -91,7 +92,7 @@ def heater_doped_si_cband(
     return c
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     """The model."""
     return {"heater_doped_si_cband": straight.get_model_fdtd}
 

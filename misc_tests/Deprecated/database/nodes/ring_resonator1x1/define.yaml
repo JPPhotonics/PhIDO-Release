@@ -1,0 +1,63 @@
+nodeLabels:
+  - silicon
+  - passive
+  - resonator
+  - 1x1 # can be parsed from analytical s-param, do we want 1x2 or #ports=3?
+  - narrowband # can be parsed from fdtd data
+  - dichroic_filter
+
+# nodeProperties:
+# name: mmi1x2 ------ parse from directory name
+description: multimode interferometer
+pythonFunc: |
+  ring_single()
+yamlCode:
+  component: ring_single
+  settings:
+      - ['gap', 0.1, 1] # gap between for coupler.
+      - ['radius', 10, 100] # for the bend and coupler.
+      - ['length_x', 1, 30] # ring coupler length.
+      - ['length_y', 0.5, 2] # vertical straight length.
+      # - ['coupler_ring', 0, 0] # ring coupler spec.
+      # - ['bend', 0, 0] # 90 degrees bend spec.
+      # - ['bend_coupler', 0, 0] # optional bend for coupler.
+      # - ['straight', 0, 0] # straight spec.
+      # - ['cross_section', 0, 0] # cross_section spec.
+      # - ['pass_cross_section_to_bend', 0, 0] # pass cross_section to bend.
+
+design: # center wl, bw,
+  wavelength_c: [1.26, 1.27 ....]
+  wavelength_bw: 0.01
+  wavelength: [1.26, 1.36] # um
+  # polarization: ['te']
+design_target:
+  S21: 0.1
+  # q factor?
+nominal_sparam: # power transmission in linear
+  S11: 0
+  S22: 0
+  S12: 0.1
+  S21: 0.1
+
+#           xxxxxxxxxxxxx
+#       xxxxx           xxxx
+#     xxx                   xxx
+#   xxx                       xxx
+#  xx                           xxx
+#  x                             xxx
+# xx                              xx▲
+# xx                              xx│length_y
+# xx                              xx▼
+# xx                             xx
+#  xx          length_x          x
+#   xx     ◄───────────────►    x
+#    xx                       xxx
+#      xx                   xxx
+#       xxx──────▲─────────xxx
+#                │gap
+#        o1──────▼─────────o2
+
+# import gdsfactory as gf
+
+# c = gf.components.ring_single(gap=0.2, radius=10.0, length_x=4.0, length_y=0.6, cross_section='xs_sc', pass_cross_section_to_bend=True)
+# c.plot()

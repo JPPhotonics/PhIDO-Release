@@ -1,0 +1,71 @@
+nodes:
+  - nodeLabels: [silicon, passive, power_splitter, 2x2, narrowband, dichroic_filter]
+    nodeProperties:
+      name: MMI-1
+      description: multimode interferometer
+      pythonClass: |
+        def mmi1x2_wavelength_1530_to_1565():
+        return gf.components.mmi1x2(width_taper=1.4, length_taper=10.0, length_mmi=12.8,
+                                width_mmi=3.8, gap_mmi=0.25, width=0.0, cross_section='xs_sc')
+      yamlCode: |
+        component: mmi2x2
+        settings:
+            width_taper: 1
+            length_taper: 5
+            length_mmi: 5
+            width_mmi: 2.5
+            gap_mmi: 0.50
+      settings: wavelength, polarization
+      band: o-band
+      loss: 2 dB
+      sMatrixAddress: ./s-matricies/mmi-1/s.dat
+  - nodeLabels: [silicon, passive, power_splitter, 1x2, narrowband, dichroic_filter]
+    nodeProperties:
+      name: MMI-2
+      description: This is an MMI.
+      pythonClass: Lorem ipsum...
+      yamlCode: Lorem ipsum...
+      settings: wavelength, polarization
+      band: o-band
+      loss: 2 dB
+      sMatrixAddress: ./s-matricies/mmi-2/s.dat
+  - nodeLabels: [silicon, active, 1x1, amplitude_modulator, narrowband]
+    nodeProperties:
+      name: MZM-1
+      description: This is a photonic element
+      pythonClass: Lorem ipsum...
+      yamlCode: Lorem ipsum...
+      settings: wavelength, polarization
+      band: o-band
+      loss: 2 dB
+      sMatrixAddress: ./s-matricies/mzm-1/s.dat
+  - nodeLabels: [silicon, passive, power_splitter, 1x4, dichroic_filter, narrowband]
+    nodeProperties:
+      name: CWDM-1
+      description: This is a photonic element
+      pythonClass: Lorem ipsum...
+      yamlCode: Lorem ipsum...
+      settings: wavelength, polarization
+      band: o-band
+      loss: 2 dB
+      sMatrixAddress: ./s-matricies/cwdm-1/s.dat
+
+relationships:
+  - relationshipType: [400G_FR4_transceiver, o-band, circuit]
+    source: MZM-1
+    destination: CWDM-1
+    relationshipProperties:
+      source_port: 2
+      destination_port: 1
+  - relationshipType: [400G_FR4_transceiver, o-band, circuit]
+    source: MZM-1
+    destination: CWDM-2
+    relationshipProperties:
+      source_port: 2
+      destination_port: 2
+  - relationshipType: [400G_FR4_transceiver, o-band, circuit]
+    source: MZM-1
+    destination: CWDM-2
+    relationshipProperties:
+      source_port: 2
+      destination_port: 3

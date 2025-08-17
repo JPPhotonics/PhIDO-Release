@@ -1,288 +1,121 @@
-# PhIDO: AI-Powered Photonic Circuit Designer
+# PhIDO - Photonic Intelligent Design & Optimization
 
-PhIDO (Photonics AI Designer) is an intelligent web application that automates the design of photonic integrated circuits using Large Language Models (LLMs). The application provides both automatic guided workflows and step-by-step execution modes for circuit design, from specification to layout generation and Design Rule Checking (DRC).
+## Tidy3D Integration Branch
 
-## 🏗️ Project Structure
+This branch integrates Tidy3D FDTD (Finite-Difference Time-Domain) simulation capabilities with the PhIDO workflow for iterative device optimization. The integration enables automated optimization of photonic devices using full-wave electromagnetic simulation.
 
+## ⚠️ Important Notice
+
+**This branch is not stable and does not ensure proper functioning in normal workflow mode (vs optimization workflow mode).** The Tidy3D integration is specifically designed for optimization workflows and may cause issues when used in standard design mode.
+
+## Dependencies
+
+This branch requires specific versions of key dependencies:
+
+- `tidy3d==2.8.4` - Tidy3D FDTD simulation engine
+- `gdsfactory==9.8.0` - GDS layout generation and manipulation
+- `gplugins==1.3.8` - GDSFactory plugins including Tidy3D integration
+
+## Tidy3D FDTD Optimization Integration
+
+### Workflow Overview
+
+The Tidy3D integration adds a new optimization workflow mode that can be enabled via the "Enable optimizer mode" toggle in the web interface. When enabled, the system follows this workflow:
+
+1. **Circuit Design Phase (P100-P300)**: Standard circuit interpretation and schematic generation
+2. **Optimization Phase (P600)**: Tidy3D FDTD-based device optimization instead of standard layout generation
+
+### Figure of Merit (FoM) Optimization
+
+The system iteratively optimizes a user-defined Figure of Merit (FoM) through the following process:
+
+#### FoM Definition
+- FoM is defined in the circuit DSL under `nodes.N1.FoM`
+- Contains three key fields:
+  - `equation`: Python expression using S-parameters (S11, S12, etc.)
+  - `direction`: Either "maximize" or "minimize"
+  - `wavelength`: Target wavelength in micrometers or "none" for broadband
+
+#### S-Parameter Mapping
+The system maps standard S-parameter notation to Tidy3D output format:
+- S11 → "o1@0,o1@0"
+- S12 → "o2@0,o1@0"
+- S21 → "o1@0,o2@0"
+- etc.
+
+#### Optimization Process
+1. **Parameter Extraction**: Identifies variable parameters from `opt_settings` and static parameters from `params`
+2. **FDTD Simulation**: Runs Tidy3D simulations for each parameter set
+3. **FoM Evaluation**: Computes FoM using the defined equation and S-parameter results
+4. **Bayesian Optimization**: Uses scikit-optimize's Gaussian Process optimization to find optimal parameters
+5. **Convergence Tracking**: Monitors optimization progress and generates convergence plots
+
+### Key Components
+
+#### `device_optimizer()` Function
+Located in `PhotonicsAI/Photon/DemoPDK.py`, this function:
+- Extracts device specifications from the circuit DSL
+- Sets up the FoM evaluation function
+- Configures Tidy3D simulation settings
+- Runs the optimization loop
+- Generates optimization plots
+
+#### `GP_BO` Class
+Located in `misc_tests/Optimization/device_opt/tidy3d_simulator.py`, this class:
+- Implements Bayesian optimization using Gaussian Processes
+- Manages FDTD simulation calls
+- Handles parameter bounds and constraints
+- Generates optimization visualizations
+
+#### Simulation Settings
+The `SimulationSettingsTiny3DFdtd` class in `misc_tests/Optimization/device_opt/SimulationSettings.py` configures:
+- Material properties (Si, SiO2, SiN)
+- Mesh settings and grid specifications
+- Boundary conditions (PML)
+- Source parameters and wavelength range
+- Port configurations
+
+### Usage Example
+
+1. Enable "Optimizer mode" toggle in the web interface
+2. Describe a photonic device with optimization requirements
+3. The system will automatically:
+   - Generate a suitable FoM based on the device type
+   - Define optimization parameters and bounds
+   - Run iterative FDTD simulations
+   - Display convergence plots and optimized parameters
+
+### Output Visualization
+
+The optimization process generates three key visualizations:
+- **Convergence Plot**: Shows FoM improvement over iterations
+- **Parameter Optimization**: Displays parameter evolution during optimization
+- **Final S-Parameters**: Shows the optimized device's scattering parameters
+
+## Installation
+
+Before installing the python package, you need to install graphviz:
+```bash
+apt-get install graphviz graphviz-dev
 ```
-PhIDO/
-├── PhotonicsAI/                    # Main application package
-│   ├── Photon/                     # Core application modules
-│   │   ├── webapp.py              # Streamlit web application (main entry point)
-│   │   ├── llm_api.py             # LLM API integrations and model configurations
-│   │   ├── utils.py               # Utility functions for circuit processing
-│   │   ├── prompts.yaml           # LLM prompts and system instructions
-│   │   ├── templates.yaml         # Circuit templates and configurations
-│   │   ├── DemoPDK.py             # Demo Process Design Kit
-│   │   ├── drc/                   # Design Rule Checking module
-│   │   │   ├── drc.py             # DRC execution engine
-│   │   │   └── drc_script.drc     # KLayout DRC script
-│   │   └── CIRCUIT_wdd0.yaml      # Example circuit configuration
-│   ├── KnowledgeBase/             # Design knowledge and components
-│   │   ├── DesignLibrary/         # Photonic component library
-│   │   │   ├── mzi_1x1_heater_tin_cband.py  # MZI with TiN heaters
-│   │   │   ├── mzi_2x2_heater_tin_cband.py  # 2x2 MZI with heaters
-│   │   │   └── ...                # Other photonic components
-│   │   └── FDTD/                  # Finite Difference Time Domain simulation data
-│   └── config.py                  # Application configuration
-├── requirements.txt               # Complete environment dependencies
-├── Makefile                      # Build and run commands
-└── README.md                     # This file
-```
-
-## 🚀 Installation
-
-### Prerequisites
-
-1. **System Dependencies** (Ubuntu/Debian):
-   ```bash
-   sudo apt-get update
-   sudo apt-get install graphviz libgraphviz-dev pkg-config klayout
-   ```
-
-2. **Python Environment**:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-### Install Dependencies
 
 ```bash
-pip install -r requirements.txt
+make install
 ```
 
-## ⚙️ Configuration
+## Configuration
 
-Create a `.env` file in the project root with your API keys:
-
-```bash
-# Required for OpenAI models (GPT-4, GPT-4o, O1)
-OPENAI_API_KEY='your-openai-api-key'
-
-# Required for Anthropic Claude models
-ANTHROPIC_API_KEY='your-anthropic-api-key'
-
-# Required for Google Gemini models
-GOOGLEGENAI_API_KEY='your-google-api-key'
+Create an `.env` file in the current working directory or HOME folder:
+```
+OPENAI_API_KEY='your-api-key'
 ```
 
-## 🤖 Supported LLM Models
+## Running
 
-PhIDO supports multiple LLM providers through the `llm_api.py` module, LLM selection is configured at the beginning of `webapp.py` script. The user may run different LLMs at each step of PhIDO, provided that the models' API keys are configured within the environmental variables:
-
-### OpenAI Models
-- **GPT-4o** (default) - General purpose reasoning
-- **GPT-4** - Advanced reasoning capabilities
-- **o1** - Specialized for reasoning tasks
-- **o3** - Latest reasoning model
-- **Environment Variable**: `OPENAI_API_KEY`
-
-### Anthropic Models
-- **Claude-3-7-Sonnet-20250219** (default) - Balanced performance and speed
-- **Claude-4.0-Opus** - Advanced reasoning capabilities
-- **Environment Variable**: `ANTHROPIC_API_KEY`
-
-### Google Models
-- **Gemini-2.5-Pro** (default) - Advanced reasoning and code generation
-- **Gemini-1.5-Pro** - General purpose reasoning
-- **Gemini-1.5-Flash** - Fast response model
-- **Gemini-2.0-Flash** - Latest flash model
-- **Gemini-2.5-Pro-Preview-03-25** - Preview version
-- **Environment Variable**: `GOOGLEGENAI_API_KEY`
-
-### NVIDIA Models (via NVIDIA NIM API)
-- **nvidia/llama-3.1-nemotron-ultra-253b-v1** (default) - Large-scale reasoning
-- **nvidia/nemotron-4-340b-instruct** - Alternative Nemotron model (Deprecated on NIM)
-- **Environment Variable**: `NVIDIA_API_KEY` 
-
-### DeepSeek Models
-- **DeepSeek-Reasoner** - Specialized reasoning model
-- **Environment Variable**: `DEEPSEEK_API_KEY` 
-
-**Note that** `OPENAI_API_KEY` **must be set in addition to any other model api key as PhIDO uses GPT models for formatting entity extraction results via pydantic.**
-
-## 🔄 Workflow Modes
-
-PhIDO provides two distinct workflow modes to accommodate different user preferences and use cases:
-
-### 1. Automatic Workflow (Guided Mode)
-A fully automated, step-by-step process that guides users through the entire circuit design pipeline.
-
-**Workflow Steps:**
-1. **Entity Extraction**: Analyzes user input to extract circuit requirements, components, and specifications
-2. **Component Selection**: Matches extracted entities with available photonic components from the knowledge base
-3. **Schematic Generation**: Creates a circuit DSL (Domain Specific Language) representation with component connections
-4. **Layout & Simulation**: Generates GDS layout files and performs circuit simulations
-5. **Design Rule Checking (DRC)**: Validates layout against manufacturing design rules using KLayout
-
-**Features:**
-- Automatic progression between steps
-- Real-time feedback and status updates
-- Error handling and recovery
-- Integrated validation at each stage
-- Template-based circuit generation
-- DRC integration for manufacturing readiness
-
-### 2. Step-by-Step Workflow (Independent Mode)
-Allows users to execute individual workflow steps with custom inputs and manual control.
-
-**Available Steps:**
-- **Entity Extraction**: Run with custom circuit descriptions
-- **Component Selection**: Execute with predefined templates or custom components
-- **Schematic Generation**: Generate circuit DSL from custom inputs
-- **Layout & Simulation**: Create layouts and run simulations independently
-- **DRC Validation**: Run design rule checks on generated layouts
-
-**Features:**
-- Manual step execution
-- Custom input capabilities
-- Detailed step-by-step control
-- Individual result inspection
-- Template-based processing
-- DRC results display and analysis
-
-## 🎯 Key Features
-
-### Circuit Design Automation
-- **Intelligent Component Matching**: AI-powered selection of photonic components based on specifications
-- **Automatic Routing**: Smart connection generation between components
-- **Layout Generation**: GDS file creation for fabrication
-- **Simulation Integration**: Circuit performance analysis using SAX
-- **Template Workflows**: Pre-defined circuit templates with customizable parameters
-
-### Design Rule Checking (DRC)
-- **KLayout Integration**: Automated DRC using industry-standard KLayout
-- **Manufacturing Validation**: Checks for minimum feature sizes, spacing, and design rules
-- **Error Reporting**: Detailed DRC violation reports with visual feedback
-- **Layer Compatibility**: Handles GDS layer number limitations gracefully
-
-### Knowledge Base Integration
-- **Component Library**: Extensive photonic component database including:
-  - MZI (Mach-Zehnder Interferometer) variants with heaters
-  - Directional couplers and splitters
-  - Waveguides and bends
-  - Active components with TiN heaters
-- **FDTD Simulations**: Pre-computed electromagnetic simulations
-- **Design Templates**: Reusable circuit configurations
-- **Process Design Kit**: Manufacturing-ready component definitions
-
-### User Experience
-- **Interactive Web Interface**: Streamlit-based responsive UI
-- **Real-time Feedback**: Live progress updates and status indicators
-- **Error Recovery**: Graceful handling of failures with retry mechanisms
-- **Export Capabilities**: Multiple output formats (GDS, YAML, PNG)
-- **Token Usage Tracking**: Monitor LLM API usage and costs
-- **Runtime Performance**: Track workflow execution times
-
-## 🏃‍♂️ Running the Application
-
-### Quick Start
 ```bash
 make run
 ```
 
-### Manual Start
-```bash
-streamlit run PhotonicsAI/Photon/webapp.py
-```
+## Branch Stability
 
-### Development Mode
-```bash
-make run      # Start the application
-```
-
-## 📊 Example Usage
-
-### Template-Based Design
-1. **Start the application** and select "Step-by-Step Workflow"
-2. **Choose a template** (e.g., "MZI with TiN heaters")
-3. **Customize parameters** (length, width, heater specifications)
-4. **Generate circuit DSL** from template
-5. **Create layout** and run simulations
-6. **Validate with DRC** for manufacturing readiness
-
-### Custom Circuit Design
-1. **Start the application** and select "Automatic Workflow"
-2. **Enter a circuit description** (e.g., "Design a 2x2 Mach-Zehnder interferometer with heaters")
-3. **Follow the guided process** through all steps
-4. **Review generated schematics** and layouts
-5. **Check DRC results** for any violations
-6. **Export results** for fabrication or further analysis
-
-## 🔧 Development
-
-### Project Structure Details
-
-- **`webapp.py`**: Main Streamlit application with UI components and workflow logic
-- **`llm_api.py`**: LLM integration layer supporting multiple providers and models
-- **`utils.py`**: Utility functions for circuit processing, DOT graph generation, and data handling
-- **`prompts.yaml`**: Structured prompts for different LLM tasks and workflow steps
-- **`templates.yaml`**: Circuit templates and component configurations
-- **`drc/`**: Design Rule Checking module with KLayout integration
-- **`KnowledgeBase/`**: Photonic component library and simulation data
-
-### Adding New Components
-
-To add new photonic components:
-
-1. Create component file in `KnowledgeBase/DesignLibrary/`
-2. Define component geometry and parameters
-3. Add S-parameter models for simulation
-4. Update component templates in `templates.yaml`
-5. Add corresponding prompts in `prompts.yaml`
-
-### Extending DRC Rules
-
-To add new design rules:
-
-1. Modify `drc/drc_script.drc` with new rule definitions
-2. Update layer definitions and constraints
-3. Test with sample layouts
-4. Update DRC reporting in `webapp.py`
-
-### Adding New LLM Models
-
-To add support for new LLM models:
-
-1. Add the model configuration in `llm_api.py`
-2. Update the model selection in `webapp.py`
-3. Add corresponding environment variables
-4. Test with appropriate prompts
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-1. **GDS Layer Number Errors**: PhIDO automatically handles large layer numbers with fallback strategies
-2. **DRC Failures**: Check KLayout installation and DRC script configuration
-3. **LLM API Errors**: Verify API keys and model availability
-4. **Component Import Errors**: Ensure all dependencies are installed correctly
-
-### Environment Setup
-
-If you encounter import issues:
-```bash
-export PYTHONPATH='.'  
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Built with Streamlit for the web interface
-- Powered by various LLM providers (OpenAI, Anthropic, Google, NVIDIA)
-- Uses GDSFactory for photonic layout generation
-- Integrates with SAX for circuit simulations
-- KLayout for Design Rule Checking
-- Template-based workflows for rapid prototyping
+This branch is experimental and intended for optimization workflows only. For stable design workflows, use the main branch or other stable branches.

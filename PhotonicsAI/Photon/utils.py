@@ -1,7 +1,10 @@
 """Utility functions for the PhotonicsAI package."""
 
+# from sax.saxtypes import Float, Model
 import ast
 import glob
+
+# from pprint import pprint
 import os
 import pathlib
 import re
@@ -9,12 +12,47 @@ import re
 import jax
 import jax.numpy as jnp
 import matplotlib
+
+# import importlib
+# from gdsfactory.quickplotter import quickplot
+# from PhotonicsAI.Frontend.quickplotter_AGG import quickplot
 import matplotlib.pyplot as plt
 import numpy as np
 import pygraphviz as pgv
 from sax.saxtypes import Float, Model
+import gdsfactory as gf
 
 from PhotonicsAI.config import PATH
+
+# def is_valid_yaml(yaml_string: str) -> bool:
+#     try:
+#         data = yaml.safe_load(yaml_string)
+#         _ = list(data.values())
+#         return True
+#     except:
+#         return False
+
+# def extract_docstring_class(file_path):
+#     """ Extracts the module-level docstring of a Python file. """
+#     with open(file_path, 'r', encoding='utf-8') as file:
+#         file_content = file.read()
+
+#     tree = ast.parse(file_content)
+#     classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
+#     docstring = ast.get_docstring(classes[0])
+
+#     try:
+#         item_doc = yaml.safe_load(docstring)
+#     except:
+#         item_doc = {"Description": docstring}
+#         item_doc['Name'] = ''
+#         print(f'-> Docstring from {file_path} is not a valid yaml. Parsing it all as description.')
+#         pass
+#     item_doc['file_path'] = file_path
+#     # item_doc['file_name'] = os.path.splitext(os.path.basename(os.path.normpath(file_path)))[0]
+#     item_doc['class_name'] = classes[0].name
+#     item_doc['docstring'] = docstring
+#     return item_doc
 
 
 def extract_docstring(file_path):
@@ -37,6 +75,7 @@ def search_directory_for_docstrings(directory=PATH.pdk):
     """Uses glob to find Python files and extract their docstrings."""
     all_docs = []
     # Recursive glob pattern to find all Python files
+    # file_paths = glob.glob(f"{directory}/**/*.py", recursive=True)
     file_paths = glob.glob(f"{directory}/*.py", recursive=True)
     filtered_paths = [
         path for path in file_paths if not os.path.basename(path) == "__init__.py"
@@ -48,6 +87,23 @@ def search_directory_for_docstrings(directory=PATH.pdk):
 
     sorted_all_docs = sorted(all_docs, key=lambda x: x["module_name"])
     return sorted_all_docs
+    # return all_docs
+
+
+# def remove_empty_routes(yaml_str):
+#     # Load the YAML string into a Python dictionary
+#     data = yaml.safe_load(yaml_str)
+
+#     # Check if 'routes' section exists and if it contains an empty 'links' section
+#     if 'routes' in data:
+#         routes = data['routes']
+#         if 'optical' in routes and isinstance(routes['optical'], dict):
+#             if 'links' in routes['optical'] and not routes['optical']['links']:
+#                 # Remove the 'routes' section
+#                 del data['routes']
+
+#     # Convert the Python dictionary back to a YAML string
+#     return yaml.dump(data, default_flow_style=False)
 
 
 def circuit_to_dot(circuit_dsl):
@@ -63,13 +119,8 @@ def circuit_to_dot(circuit_dsl):
     dot_lines = [f"graph {graph_name} {{", "  rankdir=LR;", "  node [shape=record];"]
 
     for node_name, node_info in nodes.items():
-        # Handle both string and dictionary node_info
-        if isinstance(node_info, str):
-            component_name = node_info
-            ports_info = ""
-        else:
-            component_name = node_info.get("component", "")
-            ports_info = node_info.get("properties", {}).get("ports", "")
+        component_name = node_info.get("component", "")
+        ports_info = node_info.get("properties", {}).get("ports", "")
 
         if "x" in ports_info:
             input_ports, output_ports = map(int, ports_info.split("x"))
@@ -121,12 +172,30 @@ def edges_dot_to_yaml(session):
 
     # Format edges as required
     formatted_edges = [f"{edge[0]},{edge[1]}: {edge[2]},{edge[3]}" for edge in edges]
+    # print(formatted_edges)
+    # print('===============')
 
     circuit = session["p300_circuit_dsl"]
     circuit["edges"] = {}
     for i, edge in enumerate(formatted_edges):
+        # source, target = edge.split(': ')
         circuit["edges"][f"E{i+1}"] = {}
         circuit["edges"][f"E{i+1}"]["link"] = edge
+
+    # if 'reasoning' in netlist:
+    #     del netlist['reasoning']
+
+    # for key, value in circuit['edges'].items():
+    #     if key == 'edges':
+    #         value.extend(formatted_edges)
+
+    # netlist['routes'] = {}
+    # netlist['routes']['optical'] = {}
+    # netlist['routes']['optical']['links'] = {}
+
+    # for edge in formatted_edges:
+    #     source, target = edge.split(': ')
+    #     netlist['routes']['optical']['links'][source] = target
 
     return circuit
 
@@ -156,14 +225,21 @@ def dsl_to_gf(circuit_dsl):
         placements[node_id]["rotation"] = node_info["placement"]["rotation"]
 
     gf_netlist = {
+        # 'doc': circuit_dsl['doc'],
         "instances": new_nodes,
         "routes": {
             "optical": {
                 "links": new_routes,  # Move the list of links under routes: optical: links
+# 		"routing_strategy" : "route_bundle",
+# 		"settings":{
+# 			"cross_section": "strip"
+# 		}
             }
         },
         "placements": placements,
         "ports": circuit_dsl["ports"],
+        # 'name': f'circuit_{uuid.uuid4()}'
+        # 'properties': circuit_dsl['properties']
     }
 
     return gf_netlist
@@ -328,7 +404,10 @@ matplotlib.rc("font", **font)
 def plot_dict_arrays(wl, data_dict):
     """Plot a dictionary of arrays."""
     # only keeping the s-params from port 1 to others:
+    """ print(data_dict[('o1', 'o1')]) """
     data_dict = {k: v for k, v in data_dict.items() if k[0] == "o1"}
+    """ print("\n\n I AM PLOTTING ")
+    print(data_dict.keys()) """
 
     cols = 6  # Number of columns in the subplot grid
 
@@ -343,12 +422,16 @@ def plot_dict_arrays(wl, data_dict):
     fig_width = subplot_width * cols
     fig_height = subplot_height * rows
 
+    # Find the maximum y-limit range
+    # y_max = max(np.max(np.abs(array) ** 2) for array in data_dict.values())
+
     fig, axes = plt.subplots(rows, cols, figsize=(fig_width, fig_height))
 
     # Flatten axes array for easy iteration if rows and cols are more than 1
     axes = axes.flatten() if isinstance(axes, np.ndarray) else [axes]
 
     for _idx, (ax, (key, array)) in enumerate(zip(axes, data_dict.items())):
+        # ax.plot(wl, np.abs(array)**2, label=f"{key[0]}-{key[1]}", linewidth=2, color='darksalmon')  # Make plot lines thicker
         ax.plot(
             wl,
             10 * np.log10(np.abs(array) ** 2),
@@ -365,6 +448,20 @@ def plot_dict_arrays(wl, data_dict):
             transform=ax.transAxes,
         )
 
+        # ax.set_ylim(-0.05, 1.05)  # Set the same y-limit for all subplots
+        # ax.set_ylim(-20, 1)  # Set the same y-limit for all subplots
+
+        # x_ticks = ax.get_xticks()
+        # y_ticks = ax.get_yticks()
+        # a_ratio = (x_ticks[-1]-x_ticks[0]) / (y_ticks[-1]-y_ticks[0])
+        # ax.set_aspect(aspect=a_ratio)
+        # ax.set_aspect(aspect=0.01)  # Set the aspect ratio to maintain consistent subplot height
+
+        # if idx % cols != 0:
+        #     ax.set_yticklabels([])  # Remove y-axis ticks for all but the leftmost column
+        # if idx < (rows - 1) * cols:
+        #     ax.set_xticklabels([])  # Remove x-axis ticks for all but the bottom row
+
     # Remove any unused subplots
     for ax in axes[len(data_dict) :]:
         fig.delaxes(ax)
@@ -378,9 +475,38 @@ def plot_dict_arrays(wl, data_dict):
     return fig
 
 
+def model_from_tidy3d(
+    c: gf.components,
+    filepath: str = "./build",
+):
+    """Creates an FDTD session in Tidy3D, performs s-parameter sweep and formats returned values to be plotted.
+
+    Args:
+        c (gf.components): gdsfactory component to be simulated
+        filepath (str, optional): save path of Tidy3D output npz data. Defaults to "./build/".
+    """
+    from misc_tests.Optimization.device_opt import tidy3d_simulator
+    
+    tinycomp = tidy3d_simulator.Tidy3DSimulator(component=c)
+                
+    sparams = tidy3d_simulator.run_fdtdsimulation(simulator=tinycomp, filepath=filepath)
+
+    """ formatted_sparams = {}
+    for key in sparams.keys():
+        if key.startswith('S'):
+            port1, port0 = key[1], key[2]
+            formatted_sparams['o' + port0 + '@0,o' + port1 + '@0'] = sparams[key]
+        elif key.startswith('wavelengths'): """
+    
+    #sparams['wavelengths'] = sparams['wavelengths'] * 10e5    
+    #np.savez(filepath + "/opt_sparams.npz", sparams)
+    model_data = model_from_npz(filepath + "/sparams.npz")
+    
+    return model_data
+
+
 wl_cband = np.linspace(1.500, 1.600, 128)
 PathType = str | pathlib.Path
-
 
 def model_from_npz(
     filepath: PathType | np.ndarray,
@@ -397,19 +523,30 @@ def model_from_npz(
         xkey: key for wavelengths in file.
         xunits: x units in um from the loaded file (um). 1 means 1um.
     """
-    sp = np.load(filepath) if isinstance(filepath, pathlib.Path | str) else filepath
+    sp = np.load(filepath, allow_pickle=True) if isinstance(filepath, pathlib.Path | str) else filepath
     keys = list(sp.keys())
 
     if xkey not in keys:
-        raise ValueError(f"{xkey!r} not in {keys}")
+        try:
+            sp = sp['arr_0'].tolist()
+        except Exception as e:
+            raise ValueError(f"{xkey!r} not in {keys}")
 
     x = jnp.asarray(sp[xkey] * xunits)
     wl = jnp.asarray(wl_cband)
+    """ print("\n Print wl vals")
+    print(wl) """
 
     # make sure x is sorted from low to high
     idxs = jnp.argsort(x)
     x = x[idxs]
+    """ print("\n Print x vals")
+    print(x) """
+
     sp = {k: v[idxs] for k, v in sp.items()}
+
+    """ print("\n SHOULD BE SAME 1")
+    print(sp['o1@0,o1@0']) """
 
     @jax.jit
     def model(wl: Float = wl):
@@ -422,9 +559,23 @@ def model_from_npz(
                 port0, _ = port_mode0.split("@")
                 port1, _ = port_mode1.split("@")
 
+                """ print("\n np vals")
+                print(np.abs(sp.get(key, zero))) """
                 m = jnp.interp(wl, x, np.abs(sp.get(key, zero)))
+
+                """ print("\n m")
+                print(m) """
+                
                 a = jnp.interp(wl, x, np.unwrap(np.angle(sp.get(key, zero))))
+
+                """ print("\n a")
+                print(a) """
+                
+                
                 S[(port0, port1)] = m * jnp.exp(1j * a)
+        
+        """ print("\n SHOULD BE SAME ALOS")
+        print(S[('o1', 'o1')]) """
 
         return S
 
@@ -455,11 +606,7 @@ def dot_planarity(dot_string):
     Args:
         session: The Streamlit session object containing the dot string to check.
     """
-    # Remove any extraneous tokens at the start (e.g. an extra "dot" line)
-    lines = dot_string.strip().splitlines()
-    if lines and lines[0].strip() == "dot":
-        dot_string = "\n".join(lines[1:])
-        
+
     # Load the dot string
     graph = pgv.AGraph(string=dot_string)
 

@@ -1,0 +1,139 @@
+digraph G {
+
+    node [fontname="Arial", fontsize=10, fontcolor="#000000", shape=box, style="rounded,filled", color="#ffffff", fillcolor="#eeeeee"];
+    edge [fontname="Arial", fontsize=10, fontcolor="#000000"];
+
+
+    subgraph cluster_input {
+        label = "input";
+        fontname="Arial";
+        style="filled,rounded";
+        color=lightgrey;
+
+        1000 [label="input prompt"];
+        1000 -> a1300 [label="w/o specs"];
+
+        1100 [label="decide/parse material, λ, mode"];
+
+        a1300 [label="assume default stack"];
+
+    }
+
+    1100 -> 1200;
+    1000 -> 1100 [label="w specs"];
+    a1300 -> 1300;
+
+    subgraph cluster_stack {
+        label = "stack";
+        fontname="Arial";
+        style="filled,rounded";
+        color=lightgrey;
+
+        1200 [label="Stack exists? (material, λ, mode)"];
+        1200 -> 1110 [label="no"];
+
+        1110 [label="simulate: FEM a new stack (material, λ, mode)"];
+        1110 -> 1120;
+
+        1120 [label="FEM: decide geometry of the new stack"];
+    }
+
+    1120 -> 1200;
+    1200 -> 1300 [label="yes"];
+
+    subgraph cluster_temp {
+        label = "templates";
+        fontname="Arial";
+        style="filled,rounded";
+        color=lightgrey;
+
+        1300 [label="search circuit templates"];
+        1300 -> 1400;
+
+        1400 [label="break into primitives"];
+    }
+
+    1400 -> 1500;
+
+    subgraph cluster_logic {
+        label = "circuit diagram";
+        fontname="Arial";
+        style="filled,rounded";
+        color="lightgrey";
+
+        1500 [label="components available for the stack?"];
+
+        1500 -> 1600 [label="yes"];
+        1600 [label="retrieve components and initialize netlist/circuit"];
+        1600 -> 1700;
+
+        1700 [label="parse any circuit-level and system specs"];
+        1700 -> 1710;
+
+        1710 [label="benchmark logical design, iterate?"];
+
+    }
+
+    1710 -> 1300 [label="yes"];
+    1710 -> 1770 [label="no"];
+
+    subgraph cluster_netlist {
+        label = "netlist";
+        fontname="Arial";
+        style="filled,rounded";
+        color="lightgrey";
+
+        1770 [label="initialize netlist"];
+        1770 -> 1800;
+
+        1800 [label="SAX: optimize circuit for system/circuit specs"];
+
+        1800 -> 1900;
+        1900 [label="benchmark, iterate? circuit optimization? different template?"];
+        1900 -> 1800;
+
+    }
+
+    1500 -> 1440 [label="no"];
+    1900 -> 1300;
+    1900 -> 2000;
+
+    subgraph cluster_fdtd {
+        label = "FDTD API";
+        fontname="Arial";
+        style="filled,rounded";
+        color=lightgrey;
+
+
+        1440 [label="simulate: FDTD a new component geometry"];
+        1440 -> 1460;
+
+        1460 [label="FDTD: optimize and decide geometry"];
+    }
+
+    1460 -> 1500;
+
+    subgraph cluster_GDS {
+        label = "GDS";
+        fontname="Arial";
+        style="filled,rounded";
+        color=lightgrey;
+
+        2000 [label="compile GDS"];
+        2000 -> 2100;
+
+        2100 [label="optimize routing, placement"];
+        2100 -> 2200;
+
+        2200 [label="DRC"];
+        2200 -> 2300;
+
+        2300 [label="benchmark, iterate?"];
+        2300 -> 2100 [label="yes"];
+
+    }
+
+    2300 -> 2400 [label="no"];
+    2400 [label="done"];
+
+}

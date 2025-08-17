@@ -1,0 +1,104 @@
+"""
+Name: waveguide crossing
+Description: This is a waveguide crossing
+ports: 1x1
+NodeLabels:
+    - passive
+Bandwidth: 100 nm
+Args:
+    -length: straight length (um)
+"""
+
+import gdsfactory as gf
+import numpy as np
+import sax
+
+# import pickle
+
+# from PhotonicsAI.Photon.utils import validate_cell_settings
+
+# args = {
+#     'functional': {
+#     },
+#     'geometrical': {
+#         'length':   {'default': 10., 'range': (0.1, 20000.0)},
+#     }
+# }
+
+
+@gf.cell
+def crossing(
+    cross_section: gf.typings.CrossSectionSpec = "strip",
+) -> gf.Component:
+    c = gf.Component()
+    ref = c << gf.components.crossing(cross_section="strip")
+    c.add_port("o1", port=ref.ports["o1"])
+    c.add_port("o2", port=ref.ports["o2"])
+    c.add_port("o3", port=ref.ports["o3"])
+    c.add_port("o4", port=ref.ports["o4"])
+    c.flatten()
+    return c
+
+
+def get_model(model="fdtd"):
+    if model == "ana":
+        return {"crossing": get_model_ana}
+    if model == "fdtd":
+        return {"crossing": get_model_fdtd}
+
+
+def get_model_fdtd(wl=1.5, length=10.0, neff=3.2) -> sax.SDict:
+    return sax.reciprocal({("o1", "o2"): np.exp(2j * np.pi * neff * length / wl)})
+
+
+def get_model_ana(wl=1.55, length=10):
+    loss = 0.001
+    neff = 2.34
+    ng = 3.4
+    wl0 = 1.55
+    dwl = wl - wl0
+    dneff_dwl = (ng - neff) / wl0
+    neff = neff - dwl * dneff_dwl
+    phase = 2 * np.pi * neff * length / wl
+    transmission = 10 ** (-loss * length / 20) * np.exp(1j * phase)
+    sdict = sax.reciprocal(
+        {
+            ("o1", "o2"): transmission,
+        }
+    )
+    return sdict
+
+
+if __name__ == "__main__":
+    from pprint import pprint
+
+    import matplotlib
+    import matplotlib.pyplot as plt
+
+    matplotlib.use("macosx")
+
+    c = gf.Component()
+    ref = c << crossing()
+    c.add_port("o1", port=ref.ports["o1"])
+    c.add_port("o2", port=ref.ports["o2"])
+
+    pprint(c.get_netlist())
+    print()
+    # sys.exit()
+
+    recnet = sax.RecursiveNetlist.model_validate(c.get_netlist(recursive=True))
+    print("Required Models ==>", sax.get_required_circuit_models(recnet))
+
+    _c, info = sax.circuit(recnet, get_model(model="fdtd"))
+    print(_c(wl=1.55))
+    # print( np.abs(_c(wl = 1.35)['o1','o2'])**2 )
+
+    plt.figure()
+    wl = np.linspace(1.4, 1.6, 128)
+    S21 = _c(wl=wl)["o1", "o2"]
+    plt.plot(wl, np.abs(S21) ** 2)
+    # gsax.plot_model(get_model_f/dtd)
+    plt.show()
+
+    # c.plot()
+    # plt.show()

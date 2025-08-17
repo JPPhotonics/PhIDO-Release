@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Split Screen Chat App</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1E1E1E;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        #container {
+            display: flex;
+            height: 100vh;
+        }
+        #left-panel {
+            width: 25%;
+            height: 90vh;
+            border: 2px solid #D3D3D3;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+        #right-panel {
+            width: 50%;
+            height: 90vh;
+            border: 2px solid #D3D3D3;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px;
+        }
+        #chat-messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            margin-bottom: 10px;
+        }
+        #chat-input {
+            display: flex;
+        }
+        .message {
+            padding: 5px;
+            border-radius: 5px;
+            margin-bottom: 5px;
+        }
+        .user-message {
+            background-color: #2C3E50;
+        }
+        .bot-message {
+            background-color: #34495E;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="left-panel">
+            <div id="chat-messages"></div>
+            <div id="chat-input">
+                <input id="chat-input-field" type="text" placeholder="Type your message..." style="flex-grow: 1;">
+                <button id="send-button">Send</button>
+            </div>
+        </div>
+        <div id="right-panel">
+            <p>This is the right text area. It takes up 50% of the horizontal space and 90% of the vertical space. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+        </div>
+    </div>
+</body>
+</html>

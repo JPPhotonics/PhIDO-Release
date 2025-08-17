@@ -1,0 +1,82 @@
+circuit_mzi_2x2_heater_tin_cband:
+  doc:
+    title: MZI 2x2 - Thermo-optic
+    description: This is a 2x2 Mach-Zehnder interferometer (MZI). Integrated in both arms of the MZI are TiN Heaters.
+    reference: (link)
+    labels:
+      - modulator
+      - active
+      - amplitude modulation (AM)
+      - Mach-Zehnder interferometer (MZI)
+      - Thermo-optic effect (TO)
+    Modulation bandwidth/Switching speed: 200 KHz
+    Insertion loss: 2 dB
+    Extinction ratio: 25 dB
+    Drive voltage/power: 0.75 V
+    Footprint Estimate: 516.42µm x 295.07µm
+
+  nodes:
+    N1:
+      component: 1x2mmi
+      params:
+        length:
+      properties:
+        ports: 2x2
+      placement:
+        X:
+        Y:
+        Rotation: 0
+    N2:
+      component: heater_tin
+      params:
+        Length: 100 µm
+        Voltage:
+      properties:
+        ports: 1x1
+      placement:
+        X:
+        Y:
+        Rotation: 0
+    N3:
+      component: straight
+      params:
+        Length:
+    N4:
+      component: 1x2mmi
+
+  edges:
+    E1:
+      link: N1,3:N2,1
+      properties:
+        type: direct|route
+        constraints:
+
+    E2:
+      link: N1,4:N4,2
+      properties:
+        type: direct|route
+        constraints:
+
+  circuit_properties:
+    ports: 2x2
+    specs:
+      lambda_0:
+        value: 1550
+        comment: nm, range 1530-1565
+      fsr:
+        value: 4
+        comment: nm, range 0.1-50
+    optimizer:
+      error_fn: cosine
+      sparam:
+        - S31
+        - S41
+      free_params:
+        - passive
+        - active
+      passive:
+        N3: DL
+      active:
+        N2: V
+      power:
+        N2: L

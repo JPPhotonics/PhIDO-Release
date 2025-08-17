@@ -18,14 +18,14 @@ import gdsfactory as gf
 import numpy as np
 import sax
 
-from PhotonicsAI.Photon.utils import get_file_path, model_from_npz
+from PhotonicsAI.Photon.utils import get_file_path, model_from_npz, model_from_tidy3d
 from PhotonicsAI.KnowledgeBase.DesignLibrary import bend_euler, straight, _directional_coupler
 
 @gf.cell
 def coupler_ring(
     gap: float = 0.2,
-    radius: float = 10.0,
-    length_x: float = 4,
+    radius: float = 10.01,
+    length_x: float = 4.01,
     bend: gf.typings.ComponentSpec = "bend_euler",
     straight: gf.typings.ComponentSpec = "straight",
     cross_section: gf.typings.CrossSectionSpec = "strip",
@@ -45,12 +45,28 @@ def coupler_ring(
     return c
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     """This is a model."""
     if model == "ana":
         return {"bend_euler": get_model_ana}
     if model == "fdtd":
         return {"coupler_ring": _directional_coupler.get_model_fdtd}
+    if model == "tidy3d":
+        return {"coupler_ring": get_model_tidy3d}
+
+
+def get_model_tidy3d(wl=1.55):
+    try:
+        with open('build/modified_netlist.yml', 'r') as file:
+            modified_netlist = yaml.safe_load(file)
+        if "coupler_ring" in modified_netlist.split():
+            c = gf.read.from_yaml(modified_netlist)
+        else:
+            c = coupler_ring()
+    except:
+        c = coupler_ring()
+    model_data = model_from_tidy3d(c=c)
+    return model_data(wl=wl)
 
 
 def get_model_fdtd(wl=1.55, radius=10, angle=90):

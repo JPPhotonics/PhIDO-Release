@@ -71,7 +71,7 @@ def mzi_2x2_pn_diode(
     return c
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     """The model."""
     m1 = _mmi2x2.get_model(model=model)
     m2 = straight.get_model(model=model)

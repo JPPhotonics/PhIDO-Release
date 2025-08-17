@@ -1,6 +1,7 @@
 # import glob
 import importlib
 import sys
+import os
 
 # from PIL import Image
 # import mpld3
@@ -9,10 +10,12 @@ from pathlib import Path
 
 import gdsfactory as gf
 import jax.numpy as jnp
+import numpy as np
 
 # from io import BytesIO
 import matplotlib.pyplot as plt
 import sax
+import tidy3d as td
 import yaml
 from bayes_opt import BayesianOptimization
 from gdsfactory.generic_tech import get_generic_pdk
@@ -58,7 +61,8 @@ def import_modules(module_names):
     return functions
 
 
-def import_models(module_names):
+def import_models(module_names, model_type):
+
     """Imports the specified function from each module in the given package and returns them in a dictionary.
 
     Args:
@@ -69,15 +73,21 @@ def import_models(module_names):
         full_module_name = f"PhotonicsAI.KnowledgeBase.DesignLibrary.{module_name}"
         module = importlib.import_module(full_module_name)
         func = module.get_model
-        models_dict.update(func())
+        #print(module_name, func)
+        models_dict.update(func(model_type))
         # globals()[module_name] = func()
     return models_dict
 
 
 # module_names = list_python_files("../KnowledgeBase/DesignLibrary/")
+try:
+    model_type = "tidy3d"
+except:
+    model_type = "fdtd"
+
 module_names = list_python_files(PATH.pdk)
 cells = import_modules(module_names)
-all_models = import_models(module_names)
+all_models = import_models(module_names, model_type)
 
 DemoPDK = gf.Pdk(
     name="DemoPDK",
@@ -86,6 +96,8 @@ DemoPDK = gf.Pdk(
     cells=cells,
     layer_views=layer_views,
 )
+
+DemoPDK.layer_stack = layer_stack
 DemoPDK.activate()
 
 DemoPDK = gf.Pdk(
@@ -95,6 +107,8 @@ DemoPDK = gf.Pdk(
     cells=cells,
     layer_views=layer_views,
 )
+
+DemoPDK.layer_stack = layer_stack
 DemoPDK.activate()
 
 
@@ -111,7 +125,6 @@ def generate_unique_identifier(length: int = 32) -> str:
         return unique_id[:length]
     else:
         return (unique_id * (length // len(unique_id) + 1))[:length]
-
 
 def yaml_netlist_to_gds(session, ignore_links=False):
     """Converts a YAML netlist to a GDS file.
@@ -147,6 +160,12 @@ def yaml_netlist_to_gds(session, ignore_links=False):
             y += 10
 
     modified_netlist = yaml.dump(data, default_flow_style=False, sort_keys=False)
+
+    yaml_path = 'build/modified_netlist.yaml'
+
+    # Write the YAML file
+    with open(yaml_path, "w") as f:
+        yaml.dump(modified_netlist, f, default_flow_style=False, sort_keys=False)
 
     c = gf.read.from_yaml(modified_netlist)
     # gf_netlist_dict = c.get_netlist(recursive=False)
@@ -185,8 +204,218 @@ def yaml_netlist_to_gds(session, ignore_links=False):
     session["p400_required_models"] = required_models
     session["p400_sax_circuit"] = _circuit
 
-    return c, session
+    return session
 
+def device_optimizer(session, ignore_links=False):
+    device_name = session["p300_circuit_dsl"]["nodes"]["N1"]["component"]
+    device_filename = f"{device_name}.py"
+    module_path = os.path.join("./PhotonicsAI/KnowledgeBase/DesignLibrary", device_filename)
+
+    spec = importlib.util.spec_from_file_location(device_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    from misc_tests.Optimization.device_opt import tidy3d_simulator
+
+    print(session["p300_circuit_dsl"])
+    circuit_desl = session["p300_circuit_dsl"]
+
+     # Create FoM Fucntion
+
+    fom_field = circuit_desl["nodes"]["N1"]["FoM"]
+    
+    allowed_functions = {
+        "abs": abs,
+        "max": max,
+        "min": min,
+        "sqrt": np.sqrt,
+        "real": np.real,
+        "imag": np.imag,
+        "conj": np.conj
+    }
+
+    sparam_map = {
+        "S11": "o1@0,o1@0",
+        "S12": "o2@0,o1@0",
+        "S13": "o3@0,o1@0",
+        "S14": "o4@0,o1@0",
+        "S15": "o5@0,o1@0",
+
+        "S21": "o1@0,o2@0",
+        "S22": "o2@0,o2@0",
+        "S23": "o3@0,o2@0",
+        "S24": "o4@0,o2@0",
+        "S25": "o5@0,o2@0",
+
+        "S31": "o1@0,o3@0",
+        "S32": "o2@0,o3@0",
+        "S33": "o3@0,o3@0",
+        "S34": "o4@0,o3@0",
+        "S35": "o5@0,o3@0",
+
+        "S41": "o1@0,o4@0",
+        "S42": "o2@0,o4@0",
+        "S43": "o3@0,o4@0",
+        "S44": "o4@0,o4@0",
+        "S45": "o5@0,o4@0",
+
+        "S51": "o1@0,o5@0",
+        "S52": "o2@0,o5@0",
+        "S53": "o3@0,o5@0",
+        "S54": "o4@0,o5@0",
+        "S55": "o5@0,o5@0"
+    }
+
+    def fom(sparams, fom_field):
+        scope = dict(allowed_functions)  # safe built-ins
+
+        fom_equation_str = fom_field["equation"]
+        fom_equation_direction = fom_field["direction"]
+        fom_equation_wv = fom_field["wavelength"]
+        
+        # For each symbolic name, compute the mean over wavelengths
+        if fom_equation_wv == "none":
+            for symbolic_name, dict_key in sparam_map.items():
+                if dict_key not in sparams.keys():
+                    continue
+                array = np.array(sparams[dict_key])
+                mean_value = np.mean(array)
+                scope[symbolic_name] = mean_value
+        else:
+            wavelengths_arr = np.asarray(sparams["wavelengths"])
+            idx = int(np.abs(wavelengths_arr - fom_equation_wv).argmin())
+
+            for symbolic_name, dict_key in sparam_map.items():
+                if dict_key not in sparams.keys():
+                    continue
+                array = np.array(sparams[dict_key])
+                wv_selected = array[idx]
+                scope[symbolic_name] = wv_selected
+        
+        if fom_equation_direction == "maximize":
+            fom_equation_str = f"-({fom_equation_str})"
+
+        return eval(fom_equation_str, {"__builtins__": {}}, scope)
+    
+    # Define Static Prameters and Variable Parameters with Bounds
+
+    node = circuit_desl["nodes"]["N1"]
+    params = node.get("params", {})
+    opt_settings = node.get("opt_settings", {})
+
+    variable_param_names = set(opt_settings.keys())
+
+    def parse_value(v):
+        if isinstance(v, str):
+            try:
+                v_float = float(v)
+                if v_float.is_integer():
+                    return int(v_float)
+                return v_float
+            except ValueError:
+                return v
+        elif isinstance(v, (int, float)):
+            return int(v) if isinstance(v, float) and v.is_integer() else v
+        return v
+
+    static_parameters = {k: parse_value(v) for k, v in params.items() if k not in variable_param_names}
+
+    variable_ranges = {k: (parse_value(v["min"]), parse_value(v["max"])) for k, v in opt_settings.items()}
+
+    variable_parameters = {k: parse_value((float(v["min"]) + float(v["max"])) / 2) for k, v in opt_settings.items()}
+
+    print(variable_parameters)
+    print(static_parameters)
+    print(variable_ranges)
+    # Run Optimizer
+    
+    ss = tidy3d_simulator.SimulationSettingsTiny3DFdtd()
+    component = getattr(module, device_name)
+    print(component)
+    gp = tidy3d_simulator.GP_BO(
+        component,
+        static_parameters,
+        variable_parameters,
+        variable_ranges,  # the bounds on each dimension of x
+        fom,
+        fom_field,
+        acq_func="EI",  # the acquisition function
+        n_calls=1,  # the number of evaluations of f
+        n_random_starts=1,  # the number of random initialization points
+        noise=0.1,  # the noise level (optional)
+        filepath="build",
+        graph_plot=True,
+        simulation_settings=ss,
+    )
+
+    res, sparams = gp.run_opt()
+
+    # Plotting
+
+    sorted_pairs = {}
+    print((variable_parameters.keys()))
+    var_params = list(variable_parameters.keys())
+    print(res['x_iters'])
+    print(res['x_iters'][0])
+    for i in range(0, len(res['x_iters'][0])):
+        x = [item[i] for item in res['x_iters']]
+        y = res['func_vals']
+        print(var_params)
+        sorted_pairs[var_params[i]] = sorted(zip(x, y))  # sorts by x
+    
+    print(sorted_pairs)
+
+    if len(res['x_iters'][0]) > 1:
+        fig, axs = plt.subplots(1, len(res['x_iters'][0]), figsize=(3*len(res['x_iters'][0]), 2))
+        i = 0
+        for label, xy in sorted_pairs.items():
+            x_vals, y_vals = zip(*xy)
+            axs[i].plot(x_vals, y_vals, marker='o', label=label)
+            axs[i].set_title(f"FoM vs {label}")
+            axs[i].grid(True)
+            i = i+1
+        plt.tight_layout()
+        plt.savefig("build/opt_varparams.png", dpi=300)
+        plt.close()
+    else:
+        x_vals, y_vals = zip(*sorted_pairs[var_params[0]])
+        plt.figure(figsize=(3, 2))
+        plt.plot(x_vals, y_vals, marker='o', label=(list(sorted_pairs.keys()))[0])
+        plt.title(f"FoM vs {(list(sorted_pairs.keys()))[0]}")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig("build/opt_varparams.png", dpi=300)
+        plt.close()
+
+    #sparam_plot = {k: v for k, v in sparams.items() if k.split('@', 1)[0] == "o1"}
+    sparam_plot = {k: v for k, v in sparams.items() if k != "wavelengths"}
+
+    num_plots = len(sparam_plot)
+    ncols = 2
+    nrows = (num_plots + 1) // ncols
+
+    fig, axs = plt.subplots(nrows, ncols, figsize=(12, 4 * nrows), squeeze=False)
+    axs = axs.flatten()
+
+    for idx, (sparam, values) in enumerate(sparam_plot.items()):
+        values = np.array(values)
+        mag_db = 10 * np.log10(np.abs(values) + 1e-12)  # avoid log(0)
+        
+        axs[idx].plot(sparams["wavelengths"], mag_db)
+        axs[idx].set_title(f"{sparam} (dB)")
+        axs[idx].set_xlabel("Wavelength (μm)")
+        axs[idx].set_ylabel("Magnitude (dB)")
+        axs[idx].grid(True)
+
+    # Hide any unused subplots
+    for j in range(idx + 1, len(axs)):
+        fig.delaxes(axs[j])
+
+    fig.tight_layout()
+
+    fig.savefig("build/opt_finalsparam.png")
+
+    return res, sparams
 
 def footprint_netlist(circuit_dsl):
     """Get the footprint of each component in the circuit DSL and add it to the circuit DSL.
@@ -211,7 +440,6 @@ def footprint_netlist(circuit_dsl):
 
     return foorprint, circuit_dsl
 
-
 def get_params(circuit_dsl):
     """Get the parameters of each component in the circuit DSL and add it to the circuit DSL.
 
@@ -233,7 +461,6 @@ def get_params(circuit_dsl):
         ]
 
     return circuit_dsl
-
 
 db_docs = utils.search_directory_for_docstrings()
 list_of_docs = [i["docstring"] for i in db_docs]

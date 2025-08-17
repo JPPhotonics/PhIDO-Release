@@ -67,13 +67,12 @@ def mzi_1x1_heater_tin_cband(
     return c
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     """Get the model for the edge coupler."""
     m1 = _mmi1x2.get_model(model=model)
     m2 = straight.get_model(model=model)
     m3 = bend_euler.get_model(model=model)
-    m4 = heater_tin_cband.get_model(model=model)
-    combined_dict = m1 | m2 | m3 | m4
+    combined_dict = m1 | m2 | m3
     return combined_dict
 
 

@@ -111,7 +111,7 @@ def pndiode(
     return c
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     """The model."""
     return {"pndiode": straight.get_model_fdtd}
 

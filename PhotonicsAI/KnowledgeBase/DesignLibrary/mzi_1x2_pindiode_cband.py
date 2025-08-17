@@ -77,7 +77,7 @@ def mzi_1x2_pindiode_cband(delta_length=100, length: float = 320):
     return c
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     """The model."""
     m1 = _mmi1x2.get_model(model=model)
     m2 = straight.get_model(model=model)

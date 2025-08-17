@@ -1,0 +1,127 @@
+
+{'S21': 0.5}
+
+{'description': 'multimode interferometer',
+ 'design': {'wavelength': [1.26, 1.36]},
+ 'design_target': {'S21': 0.5},
+ 'nodeLabels': ['silicon',
+                'passive',
+                'power_splitter',
+                '1x2',
+                'narrowband',
+                'dichroic_filter'],
+ 'nominal_sparam': {'S11': 0,
+                    'S12': 0.5,
+                    'S13': 0.5,
+                    'S21': 0.5,
+                    'S22': 0,
+                    'S23': 0,
+                    'S31': 0.5,
+                    'S32': 0,
+                    'S33': 0},
+ 'pythonFunc': 'mmi1x2()\n',
+ 'yamlCode': {'component': 'mmi1x2',
+              'settings': [['length_taper', 2, 15],
+                           ['length_mmi', 2, 15],
+                           ['width_mmi', 2, 6]]}}
+=====================
+params [8, 6, 3]
+output 0.20409606896097582
+output-target 0.2959039310390242
+=====================
+=====================
+params [14, 4, 5]
+output 0.3072757365894713
+output-target 0.19272426341052867
+=====================
+=====================
+params [7, 11, 4]
+output 0.025781195312200408
+output-target 0.4742188046877996
+=====================
+=====================
+params [7, 4, 2]
+output 0.4788795628116068
+output-target 0.021120437188393182
+=====================
+=====================
+params [14, 3, 4]
+output 0.2974504820301144
+output-target 0.20254951796988557
+=====================
+=====================
+params [11, 11, 4]
+output 0.020493690142743017
+output-target 0.479506309857257
+=====================
+=====================
+params [9, 12, 5]
+output 0.3137539250631875
+output-target 0.1862460749368125
+=====================
+=====================
+params [2, 13, 3]
+output 0.15479818289468117
+output-target 0.34520181710531883
+=====================
+=====================
+params [5, 11, 4]
+output 0.02922681913397296
+output-target 0.47077318086602704
+=====================
+=====================
+params [5, 11, 3]
+output 0.327796608173925
+output-target 0.17220339182607503
+=====================
+=====================
+params [13, 9, 3]
+output 0.5365513887465679
+output-target 0.03655138874656794
+=====================
+=====================
+params [7, 3, 2]
+output 0.4147485447321614
+output-target 0.08525145526783862
+=====================
+=====================
+params [15, 5, 2]
+output 0.45517825130897455
+output-target 0.044821748691025454
+=====================
+=====================
+params [15, 4, 2]
+output 0.5005170021317826
+output-target 0.000517002131782629
+=====================
+=====================
+params [15, 8, 2]
+output 0.04061603697751588
+output-target 0.45938396302248413
+=====================
+Optimal parameters: [15, 4, 2]
+Minimum value of the objective: 0.000517002131782629
+
+All tested parameters and function values:
+Parameters: [8, 6, 3], Objective: 0.2959039310390242
+Parameters: [14, 4, 5], Objective: 0.19272426341052867
+Parameters: [7, 11, 4], Objective: 0.4742188046877996
+Parameters: [7, 4, 2], Objective: 0.021120437188393182
+Parameters: [14, 3, 4], Objective: 0.20254951796988557
+Parameters: [11, 11, 4], Objective: 0.479506309857257
+Parameters: [9, 12, 5], Objective: 0.1862460749368125
+Parameters: [2, 13, 3], Objective: 0.34520181710531883
+Parameters: [5, 11, 4], Objective: 0.47077318086602704
+Parameters: [5, 11, 3], Objective: 0.17220339182607503
+Parameters: [13, 9, 3], Objective: 0.03655138874656794
+Parameters: [7, 3, 2], Objective: 0.08525145526783862
+Parameters: [15, 5, 2], Objective: 0.044821748691025454
+Parameters: [15, 4, 2], Objective: 0.000517002131782629
+Parameters: [15, 8, 2], Objective: 0.45938396302248413
+
+Total evaluations: 15
+
+Optimizer details:
+GP Kernel: GaussianProcessRegressor(kernel=1**2 * Matern(length_scale=[1, 1, 1], nu=2.5),
+                         n_restarts_optimizer=2, noise=0.010000000000000002,
+                         normalize_y=True, random_state=1010710963)

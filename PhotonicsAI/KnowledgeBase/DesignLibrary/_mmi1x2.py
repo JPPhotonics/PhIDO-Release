@@ -23,16 +23,16 @@ Args:
 import gdsfactory as gf
 import numpy as np
 import sax
+import yaml
 
-from PhotonicsAI.Photon.utils import get_file_path, model_from_npz
-
+from PhotonicsAI.Photon.utils import get_file_path, model_from_npz, model_from_tidy3d
 
 @gf.cell
 def _mmi1x2(
     length_mmi: float = 12.8,
     width_mmi: float = 3.8,
     gap_mmi: float = 0.25,
-    length_taper: float = 10.0,
+    length_taper: float = 10.01,
     width_taper: float = 1.4,
 ) -> gf.Component:
     _args = locals()
@@ -47,11 +47,43 @@ def _mmi1x2(
     return c
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     if model == "ana":
         return {"_mmi1x2": get_model_ana}
     if model == "fdtd":
         return {"_mmi1x2": get_model_fdtd}
+    if model == "tidy3d":
+        return {"_mmi1x2": get_model_tidy3d}
+
+
+def get_model_tidy3d(wl=1.55):
+
+    # Define the path
+    yaml_path = 'build/modified_netlist.yaml'
+    print("succ load st1")
+    # Read and parse the YAML file
+    with open(yaml_path, "r") as f:
+        print("hera 101")
+        modified_netlist = yaml.safe_load(f)
+        print("succ load")
+        print(modified_netlist)
+    
+    c = gf.read.from_yaml(modified_netlist)
+    print("here")
+    """ with open('build/modified_netlist.yaml', 'r') as file:
+        modified_netlist = yaml.safe_load(file)
+        print(modified_netlist)
+    if "_mmi1x2" in modified_netlist.split():
+        c = gf.read.from_yaml(modified_netlist)
+    else:
+        c = _mmi1x2() """
+    
+    """ except:
+        print("here12")
+        c = _mmi1x2() """
+    
+    model_data = model_from_tidy3d(c=c)
+    return model_data(wl=wl)
 
 
 def get_model_fdtd(wl=1.55):
@@ -111,7 +143,7 @@ if __name__ == "__main__":
     import matplotlib
     import matplotlib.pyplot as plt
 
-    matplotlib.use("macosx")
+    #matplotlib.use("macosx")
 
     c = gf.Component()
     ref = c << _mmi1x2(width_mmi=10)
@@ -119,9 +151,59 @@ if __name__ == "__main__":
     c.add_port("o2", port=ref.ports["o2"])
     c.add_port("o3", port=ref.ports["o3"])
 
+    filepath = "./build/" + "/opt_sparams.npz"
+
+    sp = np.load(filepath, allow_pickle=True)
+    keys = list(sp.keys())
+
+    xkey = "wavelengths"
+
+    if xkey not in keys:
+        try:
+            sp = sp['arr_0'].tolist()
+        except Exception as e:
+            raise ValueError(f"{xkey!r} not in {keys}")
+    wl = sp["wavelengths"]
+
+    print(sp)
+
+    # Example: Extract wavelength/frequency
+
+    #wl = sp["wavelengths"]  # e.g., in nanometers or Hz
+
+    # Loop through all S-parameters
+    for key in sp:
+        print(key)
+        sparam = sp[key]
+        magnitude = 20 * np.log10(np.abs(sparam))
+        phase = np.angle(sparam, deg=True)  # in degrees
+
+        """ # Label like "S(port1, port2)"
+        port_mode0, port_mode1 = key.split(",")
+        port0, _ = port_mode0.split("@")
+        port1, _ = port_mode1.split("@")
+        label = f"S({port0}, {port1})" """
+
+        # Plot magnitude
+        plt.figure(1)
+        plt.plot(wl, magnitude, label=key)
+
+
+    # Configure magnitude plot
+    plt.figure(1)
+    plt.title("S-Parameter Magnitude")
+    plt.xlabel("Wavelength (or Frequency)")
+    plt.ylabel("|S|")
+    plt.grid(True)
+    plt.legend()
+
+
+    plt.savefig("sparameters_plot.png", dpi=300, bbox_inches='tight')
+    plt.close()  # Ensure the figure is closed and no backend tries to show it
+
     # c.plot()
 
-    print(c.get_netlist())
+    """ print(c.get_netlist())
     print()
     # sys.exit()
 
@@ -139,4 +221,4 @@ if __name__ == "__main__":
     plt.plot(wl, np.abs(S31) ** 2)
     plt.plot(wl, np.abs(S21) ** 2)
     # gsax.plot_model(get_model_f/dtd)
-    plt.show()
+    plt.show() """

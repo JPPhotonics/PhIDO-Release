@@ -283,9 +283,6 @@ absorb_settings: |
     - If the instance does not have a corresponding settings, add a note in comments.
   - Do not modify any other fields of the NETLIST.
   - Do not add preambles (like ```yaml); only output the YAML.
-  - Separate the comment field from the NETLIST with a blank line (i.e. '\n').
-  - Field names and values must be separated by a colon and a space.
-  - The comment field value must not include any colons.
 
   Here's an example:
   INPUT DESCRIPTION:
@@ -307,6 +304,75 @@ absorb_settings: |
       ports: 1x2
     settings:
       length_mmi: 40
+
+absorb_settings_optimizer: |
+  You are an assistant to a photonic engineer. You are given an INPUT PROMPT, COMPONENT LIST and a NETLIST. Your task is to analyze and enhance the NETLIST according to the instructions below:
+
+  Task Breakdown:
+  Your task is:
+  - Find the instances (C1, C2, ...) in COMPONENT LIST
+  - If the description provides any specification:
+    - Find the same instance in NETLIST and check if it has a corresponding settings. If so, update the settings in NETLIST.
+    Also add your reasoning in in the comments field. Do not use ":" character in the comment for anything. 
+    - If the instance does not have a corresponding settings, add a note in comments.
+  - Do not modify any other fields of the NETLIST.
+  - Do not add preambles (like ```yaml); only output the YAML.
+
+  - Figure of Merit (FoM):
+    - If a FoM is specified in the INPUT PROMPT, add it under a new FoM field for that instance.
+      - The expression must be valid Python code and evaluable with eval().
+      - Use only standard Python math operators/functions: +, -, *, /, **, abs(), sqrt(), max(), min().
+      - Output the FoM as a one-line string (no comments), along with a direction field: either minimize or maximize.
+    - If no FoM is given:
+      - Derive a suitable FoM expression based only on the device’s S-parameters.
+      - The expression must be valid Python code and evaluable with eval().
+      - Use only standard Python math operators/functions: +, -, *, /, **, abs(), sqrt(), max(), min().
+      - Output the FoM as a one-line string (no comments), along with a direction field: either minimize or maximize.
+    - If a wavelength is provided in the INPUT PROMPT, add only the wavelength in micrometers to the wavelegth field. Do not add any units to the wavelength.
+    - If no wavelength is provided, set the wavelength field to "none".
+
+  - Optimization Settings:
+    - Only settings present in the NETLIST can be selected as optimization parameters
+    - If specific settings and range is specified (e.g., "length between 10 and 20 um"):
+      - Copy this setting from settings to a new tab called opt_settings, with min and max fields.
+    - If specific settings is provided without range (e.g., "optimize length"):
+      - Copy this setting from settings to a new tab called opt_settings and identify a resonable range for the setting. 
+    - If no setting or no range is provided:
+      - Determine one or two of the most significant tunable setting for that device (based on the FoM) and assign a reasonable range.
+
+  Here's an example:
+  INPUT PROMPT:
+    - Optimize the central region length of an MMI 1x2 splitter for equal output splitting with FoM = abs(abs(S21) - abs(S31)).
+
+  COMPONENT LIST:
+    - MMI 1x2 splitter
+
+  NETLIST:
+  N1:
+    component: _mmi1x2
+    info:
+      ports: 1x2
+    settings:
+      length_mmi: 5.5
+      gap_mmi: 0.5
+
+  OUTPUT:
+  comment: The length of the C1 is 40 um. Could not find the wavelength setting.
+  N1:
+    component: _mmi1x2
+    info:
+      ports: 1x2
+    settings: 
+      gap_mmi: 0.5
+      length_mmi: 15
+    opt_settings:
+      length_mmi:
+        min: 10
+        max: 20
+    FoM: 
+      equation: 'abs(abs(S21) - abs(S31))'
+      direction: minimize
+      wavelength: none
 
 # yaml_netlist: |
 #   You are an assistant to a photonic engineer.

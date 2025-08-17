@@ -15,7 +15,7 @@ import gdsfactory as gf
 import numpy as np
 import sax
 
-from PhotonicsAI.Photon.utils import get_file_path, model_from_npz
+from PhotonicsAI.Photon.utils import get_file_path, model_from_npz, model_from_tidy3d
 
 # from PhotonicsAI.Photon.utils import validate_cell_settings
 
@@ -38,11 +38,27 @@ def _directional_coupler_adiabatic() -> gf.Component:
     return c
 
 
-def get_model(model: str = "fdtd") -> dict:
+def get_model(model: str = "tidy3d") -> dict:
     if model == "ana":
         return {"_directional_coupler_adiabatic": get_model_ana}
     if model == "fdtd":
         return {"_directional_coupler_adiabatic": get_model_fdtd}
+    if model == "tidy3d":
+        return {"_directional_coupler_adiabatic": get_model_tidy3d}
+
+
+def get_model_tidy3d(wl=1.55):
+    try:
+        with open('build/modified_netlist.yml', 'r') as file:
+            modified_netlist = yaml.safe_load(file)
+        if "_directional_coupler_adiabatic" in modified_netlist.split():
+            c = gf.read.from_yaml(modified_netlist)
+        else:
+            c = _directional_coupler_adiabatic()
+    except:
+        c = _directional_coupler_adiabatic()
+    model_data = model_from_tidy3d(c=c)
+    return model_data(wl=wl)
 
 
 def get_model_fdtd(wl=1.55):

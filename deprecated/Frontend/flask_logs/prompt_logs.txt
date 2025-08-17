@@ -1,0 +1,235 @@
+a waveguide
+{"function": "waveguide", "wavelength": null, "banwidth": null, "polarization": null, "loss": null}
+############
+an arc waveguide
+{"function": "arc waveguide", "wavelength": null, "banwidth": null, "polarization": null, "loss": null}
+############
+an arc wavguide
+{"function": "arc waveguide", "wavelength": null, "banwidth": null, "polarization": null, "loss": null}
+############
+a filter at 1535 nm with 3 db loss
+{"function": "filter", "wavelength": "1535 nm", "banwidth": null, "polarization": null, "loss": "3 db"}
+############
+a filter at 1535 nm with 3 db loss
+{"function": "filter", "wavelength": "1535 nm", "banwidth": null, "polarization": null, "loss": "3 dB"}
+############
+a filter at 1535 nm with 3 db loss
+{"function": "filter", "wavelength": "1535 nm", "banwidth": null, "polarization": null, "loss": "3 db"}
+############
+a filter at 1535 nm with 3 db loss
+{"function": "filter", "wavelength": "1535 nm", "banwidth": null, "polarization": null, "loss": "3 dB"}
+############
+an mzi at 1535 nm with 3 db loss
+{"function": "mzi", "wavelength": "1535 nm", "banwidth": null, "polarization": null, "loss": "3 db"}
+############
+an mzi at 1535 nm with 3 db loss
+{"function": "mzi", "wavelength": "1535 nm", "banwidth": null, "polarization": null, "loss": "3 dB"}
+############
+an MZI
+{"function": "MZI", "wavelength": null, "banwidth": null, "polarization": null, "loss": null}
+############
+an MZI
+{"function": "MZI", "wavelength": null, "banwidth": null, "polarization": null, "loss": null}
+############
+a filter for 1545 nm with 4 db loss
+{"function": "filter", "wavelength": "1545 nm", "bandwidth": null, "polarization": null, "loss": "4 db"}
+############
+a bend waveguide
+{"function": "bend waveguide", "wavelength": null, "banwidth": null, "polarization": null, "loss": null}
+############
+a bend waveguide
+{"function": "bend waveguide", "wavelength": null, "bandwidth": null, "polarization": null, "loss": null}
+############
+a bend waveguide at 1535 nm
+{"function": "bend waveguide", "wavelength": "1535 nm", "banwidth": null, "polarization": null, "loss": null}
+############
+a bend waveguide at 1535 nm
+{"function": "bend waveguide", "wavelength": "1535 nm", "banwidth": null, "polarization": null, "loss": null}
+############
+a bend waveguide at 1535 nm
+{"function": "bend waveguide", "wavelength": "1535 nm", "bandwidth": null, "polarization": null, "loss": null}
+############
+a bend waveguide at 1535 nm
+{"function": "bend waveguide", "wavelength": "1535 nm", "banwidth": null, "polarization": null, "loss": null}
+############
+a straight waveguide at 1535 nm
+{"function": "straight waveguide", "wavelength": "1535 nm", "banwidth": null, "polarization": null, "loss": null}
+############
+an MZI at 1535 nm
+{"function": "MZI", "wavelength": "1535 nm", "banwidth": null, "polarization": null, "loss": null}
+############
+an interferometer at 800 nm
+{"function": "interferometer", "wavelength": "800 nm", "banwidth": null, "polarization": null, "loss": null}
+############
+a transceiver at 1550 nm
+{"function": "transceiver", "wavelength": "1550 nm", "banwidth": null, "polarization": null, "loss": null}
+############
+Can you help me design a photonic circuit for 1310 nm
+{"function": null, "wavelength": "1310 nm", "banwidth": null, "polarization": null, "loss": null}
+############
+Coupler at 1550 nm with 90:10 ratio
+{"function": "coupler", "wavelength": "1550 nm", "banwidth": null, "polarization": null, "loss": null}
+############
+a low loss transceiver for c-band
+{"function": "transceiver", "wavelength": "c-band", "banwidth": null, "polarization": null, "loss": "low"}
+############
+a straight waveguide
+{"function": "waveguide", "wavelength": null, "banwidth": null, "polarization": null, "loss": null}
+############
+an mzi for c-band
+{"function": "mzi", "wavelength": "c-band", "banwidth": null, "polarization": null, "loss": null}
+############
+an mzi
+{"function": "mzi", "wavelength": null, "banwidth": null, "polarization": null, "loss": null}
+############
+an interferometer for 1550 nm
+{"function": "interferometer", "wavelength": "1550 nm", "banwidth": null, "polarization": null, "loss": null}
+############
+design a 2x2 mmi with a bandwidth of 80nm
+{"function": "2x2 MMI", "wavelength": null, "bandwidth": "80nm", "polarization": null, "loss": null}
+############
+an interferometer for green light with a 50 nm bandwidth
+{"function": "interferometer", "wavelength": "green", "banwidth": "50 nm", "polarization": null, "loss": null}
+############
+I need me a super fancy green waveguide
+{"function": "waveguide", "wavelength": "green", "banwidth": null, "polarization": null, "loss": null}
+############
+interferometer
+{"function": "interferometer", "wavelength": null, "banwidth": null, "polarization": null, "loss": null}
+############
+interferomete
+{"function": "interferometer", "wavelength": null, "bandwidth": null, "polarization": null, "loss": null}
+############
+an interferometer for green light with 50 nm bandwidth
+{"function": "interferometer", "wavelength": "green", "bandwidth": "50 nm", "polarization": null, "loss": null}
+############
+a waveguide
+{"function": "waveguide", "wavelength": null, "bandwidth": null, "polarization": null, "loss": null}
+############
+a waveguide
+{"function": "waveguide", "wavelength": null, "bandwidth": null, "polarization": null, "loss": null}
+############
+a waveguide
+{"function": "waveguide", "wavelength": null, "bandwidth": null, "polarization": null, "loss": null}
+############
+make a mzi
+{"function": "mzi", "wavelength": null, "bandwidth": null, "polarization": null, "loss": null}
+############
+make an mzi that operates at red, blue and green
+{"function": "mzi", "wavelength": ["red", "blue", "green"], "bandwidth": null, "polarization": null, "loss": null}
+############
+make an mzi with -3db/mm
+{"function": "mzi", "wavelength": null, "bandwidth": null, "polarization": null, "loss": "-3db/mm"}
+############
+I want a high-speed amplitude modulator in the C-band. I need the modulator to handle a bandwidth of at least 10 GHz, achieve an extinction ratio greater than 20 dB, and maintain low insertion loss. Additionally, it is crucial that the drive voltage remains below 5 V to ensure compatibility with our existing electronic drivers.
+{"function": "high-speed amplitude modulator", "wavelength": "C-band", "bandwidth": "10 GHz", "polarization": null, "loss": null}
+############
+I want a high-speed amplitude modulator in the C-band. I need the modulator to handle a bandwidth of at least 10 GHz, achieve an extinction ratio greater than 20 dB, and maintain low insertion loss. Additionally, it is crucial that the drive voltage remains below 5 V to ensure compatibility with our existing electronic drivers.
+{"function": "high-speed amplitude modulator", "wavelength": "C-band", "bandwidth": "10 GHz", "speed": null, "polarization": null, "loss": "low insertion loss", "extinction_ratio": "20 dB", "voltage": "below 5 V"}
+############
+Looking for a compact wavelength multiplexer for a DWDM system, I am targeting specific requirements: 40 wavelength channels, with precise wavelength accuracy of ±0.02 nm and tunability across the C-band. Channel spacing should be 0.4 nm, insertion loss less than 1.5 dB, and extinction ratio greater than 30 dB.
+{"function": "compact wavelength multiplexer", "wavelength": "C-band", "bandwidth": null, "speed": null, "polarization": null, "loss": "less than 1.5 dB", "extinction_ratio": "greater than 30 dB", "voltage": null}
+############
+Looking for a compact wavelength multiplexer for a DWDM system, I am targeting specific requirements: 40 wavelength channels, with precise wavelength accuracy of ±0.02 nm and tunability across the C-band. Channel spacing should be 0.4 nm, insertion loss less than 1.5 dB, and extinction ratio greater than 30 dB
+{"function": "compact wavelength multiplexer", "wavelength": "C-band", "bandwidth": null, "speed": null, "polarization": null, "loss": "less than 1.5 dB", "extinction_ratio": "30 dB", "voltage": null}
+############
+Looking for a compact wavelength multiplexer for a DWDM system, I am targeting specific requirements: 40 wavelength channels, with precise wavelength accuracy of ±0.02 nm and tunability across the C-band. Channel spacing should be 0.4 nm, insertion loss less than 1.5 dB, and extinction ratio greater than 30 dB
+
+
+{"function": "compact wavelength multiplexer for DWDM system", "wavelength": "C-band", "bandwidth": null, "speed": null, "polarization": null, "loss": "less than 1.5 dB", "extinction_ratio": "greater than 30 dB", "voltage": null}
+############
+Looking for a compact wavelength multiplexer for a DWDM system, I am targeting specific requirements: 40 wavelength channels, with precise wavelength accuracy of ±0.02 nm and tunability across the C-band. Channel spacing should be 0.4 nm, insertion loss less than 1.5 dB, and extinction ratio greater than 30 dB.
+{"function": "compact wavelength multiplexer for a DWDM system", "wavelength": "C-band", "bandwidth": null, "speed": null, "polarization": null, "loss": "less than 1.5 dB", "extinction_ratio": "greater than 30 dB", "voltage": null}
+############
+I want a high-speed amplitude modulator in the C-band. I need the modulator to handle a bandwidth of at least 10 GHz, achieve an extinction ratio greater than 20 dB, and maintain low insertion loss. Additionally, it is crucial that the drive voltage remains below 5 V to ensure compatibility with our existing electronic drivers.
+{"function": "high-speed amplitude modulator", "wavelength": "C-band", "bandwidth": "10 GHz", "speed": null, "polarization": null, "loss": "low insertion loss", "extinction_ratio": "20 dB", "voltage": "below 5 V"}
+############
+an interferometer for c-band with less than 2 db loss
+{"function": "interferometer", "wavelength": "C-band", "bandwidth": null, "speed": null, "polarization": null, "loss": "less than 2 dB", "extinction_ratio": null, "voltage": null}
+############
+an interferometer for c-band with less than 2 db loss
+
+
+{"function": "interferometer", "wavelength": "C-band", "bandwidth": null, "speed": null, "polarization": null, "loss": "less than 2 db", "extinction_ratio": null, "voltage": null}
+############
+interferometer
+{"function": "interferometer", "wavelength": null, "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+an interferometer for c-band
+{"function": "interferometer", "wavelength": "C-band", "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+give me an edge coupler design for 1310nm
+{"function": "edge coupler design", "wavelength": "1310 nm", "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+design a filter with a free spectral range of 10nm centered at 1310nm
+{"function": "filter", "wavelength": "1310nm", "bandwidth": "10nm", "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+Help me design an interleaver in the O-band
+{"function": "interleaver", "wavelength": "O-band", "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+Help me design a microring filter in the o-band
+{"function": "microring filter", "wavelength": "o-band", "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+Design a resonator filter
+{"function": "resonator filter", "wavelength": null, "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+Design an interleaver
+{"function": "interleaver", "wavelength": null, "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+give me a design for a valid sbend at 1310nm
+null
+############
+give me a design for a valid sbend at 1310nm
+{"function": "S-bend", "wavelength": "1310 nm", "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+give me a design for a valid sbend at 1310nm
+{"Here is the YAML formatted answer": null, "function": "valid s-bend", "wavelength": "1310 nm", "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+I would like to filter 1310-1320nm
+{"function": null, "wavelength": "1310-1320nm", "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+I would like to filter 1310-1320nm
+{"function": null, "wavelength": "1310-1320nm", "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+filter 1310 nm
+{"function": "filter", "wavelength": "1310 nm", "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+I would like to filter 1310 nm
+{"function": null, "wavelength": "1310 nm", "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+I would like to filter 1310-1320nm
+{"function": "filter", "wavelength": "1310-1320nm", "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+I would like to filter 1310-1320nm
+{"function": "filter", "wavelength": "1310-1320nm", "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+can you design me a splitter tree with 20 outputs
+{"function": "splitter tree", "wavelength": null, "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+I would like to filter 1310-1320nm
+{"function": "filter", "wavelength": "1310-1320nm", "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+can you design me a splitter tree with 20 outputs
+{"function": "splitter tree", "wavelength": null, "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+I would like to filter 1310-1320nm
+{"function": "filter", "wavelength": "1310-1320nm", "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+an mzi
+null
+############
+an interferometer
+null
+############
+an interferometer
+null
+############
+an interferometer
+{"function": "interferometer", "wavelength": null, "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+an interferometer
+{"function": "interferometer", "wavelength": null, "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############
+an interferometer
+{"function": "interferometer", "wavelength": null, "bandwidth": null, "speed": null, "polarization": null, "loss": null, "extinction_ratio": null, "voltage": null}
+############

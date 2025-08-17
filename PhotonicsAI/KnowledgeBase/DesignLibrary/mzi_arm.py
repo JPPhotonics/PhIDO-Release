@@ -53,7 +53,7 @@ def mzi_arm(
     return c
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     """The model."""
     m1 = bend_euler.get_model(model=model)
     m2 = straight.get_model(model=model)

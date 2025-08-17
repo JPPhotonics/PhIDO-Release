@@ -15,22 +15,23 @@ import numpy as np
 import sax
 from gdsfactory.typings import CrossSectionSpec, LayerSpec
 
+from PhotonicsAI.Photon.utils import get_file_path, model_from_npz, model_from_tidy3d
 
 @gf.cell
 def _gc(
     polarization: str = "te",
     taper_length: float = 16.6,
-    taper_angle: float = 40.0,
+    taper_angle: float = 40.01,
     wavelength: float = 1.554,
-    fiber_angle: float = 15.0,
+    fiber_angle: float = 15.01,
     grating_line_width: float = 0.343,
     neff: float = 2.638,
     nclad: float = 1.443,
     n_periods: int = 30,
     big_last_tooth: bool = False,
     layer_slab: LayerSpec | None = "SLAB90",
-    slab_xmin: float = -1.0,
-    slab_offset: float = 2.0,
+    slab_xmin: float = -1.01,
+    slab_offset: float = 2.01,
     spiked: bool = True,
     cross_section: CrossSectionSpec = "strip",
 ) -> gf.Component:
@@ -63,11 +64,27 @@ def _gc(
     return c
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     if model == "ana":
         return {"_gc": get_model_ana}
     if model == "fdtd":
         return {"_gc": get_model_fdtd}
+    if model == "tidy3d":
+        return {"_gc": get_model_tidy3d}
+
+
+def get_model_tidy3d(wl=1.55):
+    try:
+        with open('build/modified_netlist.yml', 'r') as file:
+            modified_netlist = yaml.safe_load(file)
+        if "_gc" in modified_netlist.split():
+            c = gf.read.from_yaml(modified_netlist)
+        else:
+            c = _gc()
+    except:
+        c = _gc()
+    model_data = model_from_tidy3d(c=c)
+    return model_data(wl=wl)
 
 
 def get_model_fdtd(wl=1.5, length=10.0, neff=3.2) -> sax.SDict:

@@ -15,6 +15,8 @@ import gdsfactory as gf
 import numpy as np
 import sax
 
+from PhotonicsAI.Photon.utils import get_file_path, model_from_npz, model_from_tidy3d
+
 # import pickle
 
 # from PhotonicsAI.Photon.utils import validate_cell_settings
@@ -54,12 +56,28 @@ def polarization_splitter_rotator(
     return c
 
 
-def get_model(model="fdtd"):
+def get_model(model="tidy3d"):
     """The model."""
     if model == "ana":
         return {"polarization_splitter_rotator": get_model_ana}
     if model == "fdtd":
         return {"polarization_splitter_rotator": get_model_fdtd}
+    if model == "tidy3d":
+        return {"polarization_splitter_rotator": get_model_tidy3d}
+
+
+def get_model_tidy3d(wl=1.55):
+    try:
+        with open('build/modified_netlist.yml', 'r') as file:
+            modified_netlist = yaml.safe_load(file)
+        if "polarization_splitter_rotator" in modified_netlist.split():
+            c = gf.read.from_yaml(modified_netlist)
+        else:
+            c = polarization_splitter_rotator()
+    except:
+        c = polarization_splitter_rotator()
+    model_data = model_from_tidy3d(c=c)
+    return model_data(wl=wl)
 
 
 def get_model_fdtd(wl=1.5, length=10.0, neff=3.2) -> sax.SDict:

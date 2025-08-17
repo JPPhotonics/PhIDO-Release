@@ -1,0 +1,241 @@
+nets:
+- p1: _directional_coupler_L1_6cd9a1d0_890014_248618,o1
+  p2: straight_L107p114_N2_CS_540009dd_673957_198618,o2
+- p1: _directional_coupler_L1_6cd9a1d0_890014_248618,o2
+  p2: straight_L107p114_N2_CS_540009dd_673957_298618,o2
+- p1: bend_euler_R10_A90_P0p5_2f1f5c6d_605525_242590,o1
+  p2: straight_L28p847_N2_CSstrip_W0p5_610400_223041,o2
+- p1: bend_euler_R10_A90_P0p5_2f1f5c6d_605525_242590,o2
+  p2: mzi_2x2_heater_tin_cband_L320_342200_248250,o4
+- p1: bend_euler_R10_A90_P0p5_2f1f5c6d_605525_253910,o1
+  p2: straight_L29p5830000000_6b4e2169_610400_273826,o2
+- p1: bend_euler_R10_A90_P0p5_2f1f5c6d_605525_253910,o2
+  p2: mzi_2x2_heater_tin_cband_L320_342200_248250,o3
+- p1: bend_euler_R10_A90_P0p5_2f1f5c6d_615275_203493,o1
+  p2: straight_L107p114_N2_CS_540009dd_673957_198618,o1
+- p1: bend_euler_R10_A90_P0p5_2f1f5c6d_615275_203493,o2
+  p2: straight_L28p847_N2_CSstrip_W0p5_610400_223041,o1
+- p1: bend_euler_R10_A90_P0p5_2f1f5c6d_615275_293743,o1
+  p2: straight_L107p114_N2_CS_540009dd_673957_298618,o1
+- p1: bend_euler_R10_A90_P0p5_2f1f5c6d_615275_293743,o2
+  p2: straight_L29p5830000000_6b4e2169_610400_273826,o1
+instances:
+  _directional_coupler_L1_6cd9a1d0_890014_248618:
+    component: _directional_coupler
+    info: {}
+    settings:
+      length: 125
+      dy: 100
+      dx: 100
+  bend_euler_R10_A90_P0p5_2f1f5c6d_605525_242590:
+    component: bend_euler
+    info:
+      length: 16.637
+      dy: 10
+      min_bend_radius: 7.061
+      radius: 10
+      route_info_type: xs_34e31a19
+      route_info_length: 16.637
+      route_info_weight: 16.637
+      route_info_xs_34e31a19_length: 16.637
+      route_info_n_bend_90: 1
+      route_info_min_bend_radius: 7.061
+    settings:
+      radius: 10
+      angle: 90
+      p: 0.5
+      with_arc_floorplan: true
+      cross_section: strip
+      allow_min_radius_violation: false
+  bend_euler_R10_A90_P0p5_2f1f5c6d_605525_253910:
+    component: bend_euler
+    info:
+      length: 16.637
+      dy: 10
+      min_bend_radius: 7.061
+      radius: 10
+      route_info_type: xs_34e31a19
+      route_info_length: 16.637
+      route_info_weight: 16.637
+      route_info_xs_34e31a19_length: 16.637
+      route_info_n_bend_90: 1
+      route_info_min_bend_radius: 7.061
+    settings:
+      radius: 10
+      angle: 90
+      p: 0.5
+      with_arc_floorplan: true
+      cross_section: strip
+      allow_min_radius_violation: false
+  bend_euler_R10_A90_P0p5_2f1f5c6d_615275_203493:
+    component: bend_euler
+    info:
+      length: 16.637
+      dy: 10
+      min_bend_radius: 7.061
+      radius: 10
+      route_info_type: xs_34e31a19
+      route_info_length: 16.637
+      route_info_weight: 16.637
+      route_info_xs_34e31a19_length: 16.637
+      route_info_n_bend_90: 1
+      route_info_min_bend_radius: 7.061
+    settings:
+      radius: 10
+      angle: 90
+      p: 0.5
+      with_arc_floorplan: true
+      cross_section: strip
+      allow_min_radius_violation: false
+  bend_euler_R10_A90_P0p5_2f1f5c6d_615275_293743:
+    component: bend_euler
+    info:
+      length: 16.637
+      dy: 10
+      min_bend_radius: 7.061
+      radius: 10
+      route_info_type: xs_34e31a19
+      route_info_length: 16.637
+      route_info_weight: 16.637
+      route_info_xs_34e31a19_length: 16.637
+      route_info_n_bend_90: 1
+      route_info_min_bend_radius: 7.061
+    settings:
+      radius: 10
+      angle: 90
+      p: 0.5
+      with_arc_floorplan: true
+      cross_section: strip
+      allow_min_radius_violation: false
+  mzi_2x2_heater_tin_cband_L320_342200_248250:
+    component: mzi_2x2_heater_tin_cband
+    info: {}
+    settings:
+      length: 320
+  straight_L107p114_N2_CS_540009dd_673957_198618:
+    component: straight
+    info:
+      length: 107.114
+      width: 0.5
+      route_info_type: xs_34e31a19
+      route_info_length: 107.114
+      route_info_weight: 107.114
+      route_info_xs_34e31a19_length: 107.114
+    settings:
+      length: 107.114
+      npoints: 2
+      cross_section: strip
+      width: 0.5
+  straight_L107p114_N2_CS_540009dd_673957_298618:
+    component: straight
+    info:
+      length: 107.114
+      width: 0.5
+      route_info_type: xs_34e31a19
+      route_info_length: 107.114
+      route_info_weight: 107.114
+      route_info_xs_34e31a19_length: 107.114
+    settings:
+      length: 107.114
+      npoints: 2
+      cross_section: strip
+      width: 0.5
+  straight_L28p847_N2_CSstrip_W0p5_610400_223041:
+    component: straight
+    info:
+      length: 28.847
+      width: 0.5
+      route_info_type: xs_34e31a19
+      route_info_length: 28.847
+      route_info_weight: 28.847
+      route_info_xs_34e31a19_length: 28.847
+    settings:
+      length: 28.847
+      npoints: 2
+      cross_section: strip
+      width: 0.5
+  straight_L29p5830000000_6b4e2169_610400_273826:
+    component: straight
+    info:
+      length: 29.583
+      width: 0.5
+      route_info_type: xs_34e31a19
+      route_info_length: 29.583
+      route_info_weight: 29.583
+      route_info_xs_34e31a19_length: 29.583
+    settings:
+      length: 29.583
+      npoints: 2
+      cross_section: strip
+      width: 0.5
+placements:
+  _directional_coupler_L1_6cd9a1d0_890014_248618:
+    x: 827.514
+    'y': 248.25
+    rotation: 0
+    mirror: false
+  bend_euler_R10_A90_P0p5_2f1f5c6d_605525_242590:
+    x: 610.4
+    'y': 237.465
+    rotation: 90
+    mirror: false
+  bend_euler_R10_A90_P0p5_2f1f5c6d_605525_253910:
+    x: 610.4
+    'y': 259.035
+    rotation: 270
+    mirror: true
+  bend_euler_R10_A90_P0p5_2f1f5c6d_615275_203493:
+    x: 620.4
+    'y': 198.618
+    rotation: 180
+    mirror: true
+  bend_euler_R10_A90_P0p5_2f1f5c6d_615275_293743:
+    x: 620.4
+    'y': 298.618
+    rotation: 180
+    mirror: false
+  mzi_2x2_heater_tin_cband_L320_342200_248250:
+    x: 99
+    'y': 248.25
+    rotation: 0
+    mirror: false
+  straight_L107p114_N2_CS_540009dd_673957_198618:
+    x: 620.4
+    'y': 198.618
+    rotation: 0
+    mirror: false
+  straight_L107p114_N2_CS_540009dd_673957_298618:
+    x: 620.4
+    'y': 298.618
+    rotation: 0
+    mirror: false
+  straight_L28p847_N2_CSstrip_W0p5_610400_223041:
+    x: 610.4
+    'y': 208.618
+    rotation: 90
+    mirror: false
+  straight_L29p5830000000_6b4e2169_610400_273826:
+    x: 610.4
+    'y': 288.618
+    rotation: 270
+    mirror: false
+ports: {}
+name: new_circuit1
+warnings:
+  optical:
+    unconnected_ports:
+    - ports:
+      - mzi_2x2_heater_tin_cband_L320_342200_248250,o1
+      - mzi_2x2_heater_tin_cband_L320_342200_248250,o2
+      - _directional_coupler_L1_6cd9a1d0_890014_248618,o3
+      - _directional_coupler_L1_6cd9a1d0_890014_248618,o4
+      values:
+      - - 84000
+        - 247465
+      - - 84000
+        - 249035
+      - - 1052514
+        - 298618
+      - - 1052514
+        - 198618
+      message: 4 unconnected optical ports!
