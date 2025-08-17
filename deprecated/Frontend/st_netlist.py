@@ -116,7 +116,7 @@ def call_fireworks(prompt, sys_prompt, _model="llama-v3-70b-instruct"):
 
 
 def call_groq(prompt, sys_prompt, model="llama3-8b-8192"):
-    client = Groq(api_key="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")
+    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
     response = client.chat.completions.create(
         model=model,
         temperature=0.1,
@@ -129,7 +129,7 @@ def call_groq(prompt, sys_prompt, model="llama3-8b-8192"):
 
 
 def call_openai(prompt, sys_prompt, model="gpt-4o"):
-    client = OpenAI(api_key="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")
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     response = client.chat.completions.create(
         model=model,
         temperature=0.2,
