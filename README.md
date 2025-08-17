@@ -52,6 +52,11 @@ PhIDO/
 ```bash
 pip install -r requirements.txt
 ```
+After this is done, do:
+```bash
+pip install kfactory==0.21.1
+```
+Ignore the pip dependency resolver conflict with gdsfactory 8.8.5.
 
 ## ⚙️ Configuration
 
