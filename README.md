@@ -58,6 +58,9 @@ pip install kfactory==0.21.1
 ```
 Ignore the pip dependency resolver conflict with gdsfactory 8.8.5.
 
+### Setup Log Directory
+Create a `log` folder under `PhIDO-Release/PhotonicsAI/`
+
 ## ⚙️ Configuration
 
 Create a `.env` file in the project root with your API keys:
@@ -78,8 +81,6 @@ DEEPSEEK_API_KEY='your-deepseek-api-key'
 # Required for models hosted on NVIDIA NIM
 NVIDIA_API_KEY='your-nvidia-nim-api-key'
 ```
-
-Create a `log` folder under `PhIDO-Release/PhotonicsAI/`.
 
 ## 🤖 Supported LLM Models
 
