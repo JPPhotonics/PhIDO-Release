@@ -279,6 +279,10 @@ pip install kfactory==0.21.1
 ```
 Ignore the pip dependency resolver conflict with gdsfactory 8.8.5.
 
+### Log Error
+
+If you encounter a logger error, create a ```log``` folder under ```PhIDO-Release/PhotonicsAI```.
+
 ## 🤝 Contributing
 
 1. Fork the repository
