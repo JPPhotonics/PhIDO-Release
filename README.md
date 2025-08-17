@@ -267,6 +267,18 @@ If you encounter import issues:
 export PYTHONPATH='.'  
 ```
 
+### Startup Error
+
+If you encounter the error below:
+```bash
+ModuleNotFoundError: No module named 'kfactory.routing.generic'
+```
+do
+```bash
+pip install kfactory==0.21.1
+```
+Ignore the pip dependency resolver conflict with gdsfactory 8.8.5.
+
 ## 🤝 Contributing
 
 1. Fork the repository
