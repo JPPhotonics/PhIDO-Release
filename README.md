@@ -66,6 +66,12 @@ ANTHROPIC_API_KEY='your-anthropic-api-key'
 
 # Required for Google Gemini models
 GOOGLEGENAI_API_KEY='your-google-api-key'
+
+# Required for DeepSeek-R1
+DEEPSEEK_API_KEY='your-deepseek-api-key'
+
+# Required for models hosted on NVIDIA NIM
+NVIDIA_API_KEY='your-nvidia-nim-api-key'
 ```
 
 ## 🤖 Supported LLM Models
@@ -178,6 +184,12 @@ Allows users to execute individual workflow steps with custom inputs and manual 
 
 ## 🏃‍♂️ Running the Application
 
+Before starting:
+```bash
+export PYTHONPATH='.'
+```
+Set ```./PhIDO-Release``` as a PYTHONPATH environmental variable.
+
 ### Quick Start
 ```bash
 make run
@@ -186,11 +198,6 @@ make run
 ### Manual Start
 ```bash
 streamlit run PhotonicsAI/Photon/webapp.py
-```
-
-### Development Mode
-```bash
-make run      # Start the application
 ```
 
 ## 📊 Example Usage
