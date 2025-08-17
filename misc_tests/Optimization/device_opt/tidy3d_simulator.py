@@ -30,7 +30,7 @@ import numpy as np
 import tiktoken
 import openai
 # Configure OpenAI API Key
-OPENAI_API_KEY = "ENTER API KEY"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 import pathlib
