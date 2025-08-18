@@ -16,7 +16,7 @@ classifiers = [
 dependencies = [
     "gdsfactory~=8.18.1",
     "gplugins[sax,tidy3d]~=1.1.2",
-    "sax==0.13.3",
+    "sax==0.15.14",
     "fastapi",
     "uvicorn",
     "sse-starlette",
