@@ -87,35 +87,34 @@ NVIDIA_API_KEY='your-nvidia-nim-api-key'
 PhIDO supports multiple LLM providers through the `llm_api.py` module, LLM selection is configured at the beginning of `webapp.py` script. The user may run different LLMs at each step of PhIDO, provided that the models' API keys are configured within the environmental variables:
 
 ### OpenAI Models
-- **GPT-4o** (default) - General purpose reasoning
-- **GPT-4** - Advanced reasoning capabilities
-- **o1** - Specialized for reasoning tasks
-- **o3** - Latest reasoning model
+- **GPT-4o** - General purpose reasoning `gpt-4o`
+- **o1** - (Default) Specialized for reasoning tasks `o1`
+- **o3-mini** - Faster reasoning model `o3-mini`
 - **Environment Variable**: `OPENAI_API_KEY`
 
 ### Anthropic Models
-- **Claude-3-7-Sonnet-20250219** (default) - Balanced performance and speed
-- **Claude-4.0-Opus** - Advanced reasoning capabilities
+- **Claude-3-7-Sonnet-20250219** - Balanced performance and speed `claude-3-7-sonnet-latest`
+- **Claude-4.0-Opus** - Advanced reasoning capabilities `claude-opus-4-20250514`
 - **Environment Variable**: `ANTHROPIC_API_KEY`
 
 ### Google Models
-- **Gemini-2.5-Pro** (default) - Advanced reasoning and code generation
-- **Gemini-1.5-Pro** - General purpose reasoning
-- **Gemini-1.5-Flash** - Fast response model
-- **Gemini-2.0-Flash** - Latest flash model
-- **Gemini-2.5-Pro-Preview-03-25** - Preview version
+- **Gemini-2.5-Pro** - Advanced reasoning and code generation `gemini-2.5-pro`
+- **Gemini-1.5-Pro** - General purpose reasoning `gemini-1.5-pro`
+- **Gemini-1.5-Flash** - Fast response model `gemini-1.5-flash`
+- **Gemini-2.0-Flash** - Latest flash model `gemini-2.0-flash`
 - **Environment Variable**: `GOOGLEGENAI_API_KEY`
 
 ### NVIDIA Models (via NVIDIA NIM API)
-- **nvidia/llama-3.1-nemotron-ultra-253b-v1** (default) - Large-scale reasoning
-- **nvidia/nemotron-4-340b-instruct** - Alternative Nemotron model (Deprecated on NIM)
+- **nvidia/llama-3.1-nemotron-ultra-253b-v1** - Large-scale reasoning `nvidia/llama-3.1-nemotron-ultra-253b-v1`
+- **nvidia/nemotron-4-340b-instruct** - Alternative Nemotron model (Deprecated on NIM) `nvidia/nemotron-4-340b-instruct`
 - **Environment Variable**: `NVIDIA_API_KEY` 
 
 ### DeepSeek Models
-- **DeepSeek-Reasoner** - Specialized reasoning model
+- **DeepSeek-Reasoner** - Specialized reasoning model `deepseek-reasoner`
 - **Environment Variable**: `DEEPSEEK_API_KEY` 
 
 **Note that** `OPENAI_API_KEY` **must be set in addition to any other model api key as PhIDO uses GPT models for formatting entity extraction results via pydantic.**
+Other models offered by API providers above may also work but have not been tested. 
 
 ## 🔄 Workflow Modes
 
