@@ -114,7 +114,7 @@ PhIDO supports multiple LLM providers through the `llm_api.py` module, LLM selec
 - **Environment Variable**: `DEEPSEEK_API_KEY` 
 
 **Note that** `OPENAI_API_KEY` **must be set in addition to any other model api key as PhIDO uses GPT models for formatting entity extraction results via pydantic.**
-Other models offered by API providers above may also work but have not been tested. 
+Other models not listed above but offered by API providers above may also work but have not been tested. 
 
 ## 🔄 Workflow Modes
 
