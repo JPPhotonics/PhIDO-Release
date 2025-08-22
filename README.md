@@ -2,6 +2,8 @@
 
 PhIDO (Photonics Intelligent Design and Optimization) is an intelligent web application that automates the design of photonic integrated circuits using Large Language Models (LLMs). The application provides both automatic guided workflows and step-by-step execution modes for circuit design, from specification to layout generation and Design Rule Checking (DRC).
 
+[Paper preprint](https://arxiv.org/abs/2508.14123)
+
 ## 🏗️ Project Structure
 
 ```
