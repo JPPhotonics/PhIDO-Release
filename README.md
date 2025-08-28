@@ -41,6 +41,7 @@ PhIDO/
    ```bash
    sudo apt-get update
    sudo apt-get install graphviz libgraphviz-dev pkg-config klayout
+   sudo apt-get install -y build-essential python3-dev swig
    ```
 
 2. **Python Environment**:
