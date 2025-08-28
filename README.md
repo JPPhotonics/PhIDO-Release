@@ -277,8 +277,16 @@ To add support for new LLM models:
 4. **Component Import Errors**: Ensure all dependencies are installed correctly
 
 ### Environment Setup
+If pygraphviz fails to build .whl file, try:
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential
+sudo apt-get install -y python3-dev
+sudo apt-get install -y swig
+```
+and rerun ```requirements.txt``` pip install.
 
-If you encounter import issues:
+If you encounter import issues during running of PhIDO:
 ```bash
 export PYTHONPATH='.'  
 ```
