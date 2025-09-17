@@ -1,7 +1,7 @@
 # Core packages with strict versions (critical for functionality)
 gdsfactory==8.8.5
 gdstk==0.9.60
-jax==0.4.34
+jax==0.7.2
 jaxlib==0.4.34
 tidy3d>=2.0.0
 sax>=0.0.1
