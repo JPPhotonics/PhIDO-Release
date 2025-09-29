@@ -1,5 +1,5 @@
 # Core packages with strict versions (critical for functionality)
-gdsfactory==8.8.5
+gdsfactory==9.18.0
 gdstk==0.9.60
 jax==0.4.34
 jaxlib==0.4.34
