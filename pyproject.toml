@@ -34,7 +34,7 @@ dependencies = [
     "transformers[torch]",
     "scikit-optimize",
     "groq",
-    "openai==1.43.0",
+    "openai==2.0.1",
     "fireworks-ai",
     "replicate",
     "sentence_transformers",
