@@ -1,0 +1,141 @@
+doc:
+  description: The text describes the design of a 1x16 power splitter using 15 1x2
+    MMIs arranged in a four-stage tree formation. Each of the 16 outputs is then connected
+    to a variable optical attenuator (VOA), a thermo-optic phase shifter, and finally
+    to a grating coupler.
+  labels:
+  - ''
+  reference: (link)
+  title: "1\xD716 Power Splitter Design Using MMIs, VOAs, and Phase Shifters"
+edges: 'Design a four-stage tree: start with 1 MMI splitting into 2 outputs, followed
+  by 2 MMIs splitting into 4 outputs, continuing this duplication process with each
+  subsequent stage of MMIs until there are 16 outputs. Each output should connect
+  to a VOA, then a thermo-optic phase shifter, and finally to a grating coupler.'
+nodes:
+  N1:
+    component: _mmi1x2
+  N10:
+    component: _mmi1x2
+  N11:
+    component: _mmi1x2
+  N12:
+    component: _mmi1x2
+  N13:
+    component: _mmi1x2
+  N14:
+    component: _mmi1x2
+  N15:
+    component: _mmi1x2
+  N16:
+    component: pindiode_cband
+  N17:
+    component: pindiode_cband
+  N18:
+    component: pindiode_cband
+  N19:
+    component: pindiode_cband
+  N2:
+    component: _mmi1x2
+  N20:
+    component: pindiode_cband
+  N21:
+    component: pindiode_cband
+  N22:
+    component: pindiode_cband
+  N23:
+    component: pindiode_cband
+  N24:
+    component: pindiode_cband
+  N25:
+    component: pindiode_cband
+  N26:
+    component: pindiode_cband
+  N27:
+    component: pindiode_cband
+  N28:
+    component: pindiode_cband
+  N29:
+    component: pindiode_cband
+  N3:
+    component: _mmi1x2
+  N30:
+    component: pindiode_cband
+  N31:
+    component: pindiode_cband
+  N32:
+    component: pindiode_cband
+  N33:
+    component: heater_tin_cband
+  N34:
+    component: heater_tin_cband
+  N35:
+    component: heater_tin_cband
+  N36:
+    component: heater_tin_cband
+  N37:
+    component: heater_tin_cband
+  N38:
+    component: heater_tin_cband
+  N39:
+    component: heater_tin_cband
+  N4:
+    component: _mmi1x2
+  N40:
+    component: heater_tin_cband
+  N41:
+    component: heater_tin_cband
+  N42:
+    component: heater_tin_cband
+  N43:
+    component: heater_tin_cband
+  N44:
+    component: heater_tin_cband
+  N45:
+    component: heater_tin_cband
+  N46:
+    component: heater_tin_cband
+  N47:
+    component: heater_tin_cband
+  N48:
+    component: _gc
+  N49:
+    component: _gc
+  N5:
+    component: _mmi1x2
+  N50:
+    component: _gc
+  N51:
+    component: _gc
+  N52:
+    component: _gc
+  N53:
+    component: _gc
+  N54:
+    component: _gc
+  N55:
+    component: _gc
+  N56:
+    component: _gc
+  N57:
+    component: _gc
+  N58:
+    component: _gc
+  N59:
+    component: _gc
+  N6:
+    component: _mmi1x2
+  N60:
+    component: _gc
+  N61:
+    component: _gc
+  N62:
+    component: _gc
+  N63:
+    component: _gc
+  N7:
+    component: _mmi1x2
+  N8:
+    component: _mmi1x2
+  N9:
+    component: _mmi1x2
+properties: {}

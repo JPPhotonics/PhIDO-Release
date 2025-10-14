@@ -4,6 +4,8 @@ PhIDO (Photonics Intelligent Design and Optimization) is an intelligent web appl
 
 [Paper preprint](https://arxiv.org/abs/2508.14123)
 
+> **📚 Getting Started**: For hands-on tutorials and detailed step-by-step instructions on using PhIDO, see [GETTING_STARTED.md](GETTING_STARTED.md). This comprehensive guide includes practical examples, troubleshooting tips, and detailed explanations of both workflow modes.
+
 ## 🏗️ Project Structure
 
 ```
@@ -27,6 +29,12 @@ PhIDO/
 │   │   │   └── ...                # Other photonic components
 │   │   └── FDTD/                  # Finite Difference Time Domain simulation data
 │   └── config.py                  # Application configuration
+├── GETTING_STARTED.md             # Comprehensive tutorial and user guide
+├── GETTING_STARTED_EXAMPLE_OUTPUTS/  # Example outputs for tutorial prompts
+│   ├── Level 1 Prompt/            # Single component example outputs
+│   ├── Level 2 Prompt/            # Two components example outputs
+│   ├── Level 3 Prompt/            # Multiple components example outputs
+│   └── Level 4 Prompt/            # Complex system example outputs
 ├── requirements.txt               # Complete environment dependencies
 ├── Makefile                      # Build and run commands
 ├── Testbench.xlsx                # Contains 102 testbench prompts
@@ -211,6 +219,8 @@ streamlit run PhotonicsAI/Photon/webapp.py
 ```
 
 ## 📊 Example Usage
+
+For detailed tutorials with step-by-step instructions and practical examples, see [GETTING_STARTED.md](GETTING_STARTED.md).
 
 ### Template-Based Design
 1. **Start the application** and select "Step-by-Step Workflow"

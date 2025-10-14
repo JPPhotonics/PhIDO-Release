@@ -1,0 +1,126 @@
+doc:
+  description: The task describes the design of a three-stage 1x8 power splitter using
+    Mach-Zehnder Interferometers (MZIs) arranged in a tree structure. The first stage
+    includes 1 MZI with a 50/50 splitting ratio, the second stage includes 2 MZIs,
+    and the third stage includes 4 MZIs. All MZIs have 500nm wide waveguides suitable
+    for C-band operation.
+  labels:
+  - ''
+  reference: (link)
+  title: Design of a 1x8 Power Splitter using MZI Tree Structure
+edges:
+  E1:
+    link: 'N1,o2: N2,o1'
+  E2:
+    link: 'N1,o3: N3,o1'
+  E3:
+    link: 'N2,o2: N4,o1'
+  E4:
+    link: 'N2,o3: N5,o1'
+  E5:
+    link: 'N3,o2: N6,o1'
+  E6:
+    link: 'N3,o3: N7,o1'
+nodes:
+  N1:
+    component: mzi_1x2_pindiode_cband
+    params:
+      delta_length: 100
+      length: 320
+    placement:
+      rotation: 0
+      x: 92.79400000000001
+      y: 1441.667
+    properties:
+      dx: 428.3
+      dy: 512.2
+      ports: 1x2
+  N2:
+    component: mzi_1x2_pindiode_cband
+    params:
+      delta_length: 100
+      length: 320
+    placement:
+      rotation: 0
+      x: 717.794
+      y: 1981.944
+    properties:
+      dx: 428.3
+      dy: 512.2
+      ports: 1x2
+  N3:
+    component: mzi_1x2_pindiode_cband
+    params:
+      delta_length: 100
+      length: 320
+    placement:
+      rotation: 0
+      x: 717.794
+      y: 901.389
+    properties:
+      dx: 428.3
+      dy: 512.2
+      ports: 1x2
+  N4:
+    component: mzi_1x2_pindiode_cband
+    params:
+      delta_length: 100
+      length: 320
+    placement:
+      rotation: 0
+      x: 1342.7939999999999
+      y: 2525.0
+    properties:
+      dx: 428.3
+      dy: 512.2
+      ports: 1x2
+  N5:
+    component: mzi_1x2_pindiode_cband
+    params:
+      delta_length: 100
+      length: 320
+    placement:
+      rotation: 0
+      x: 1342.7939999999999
+      y: 1802.778
+    properties:
+      dx: 428.3
+      dy: 512.2
+      ports: 1x2
+  N6:
+    component: mzi_1x2_pindiode_cband
+    params:
+      delta_length: 100
+      length: 320
+    placement:
+      rotation: 0
+      x: 1342.7939999999999
+      y: 1080.556
+    properties:
+      dx: 428.3
+      dy: 512.2
+      ports: 1x2
+  N7:
+    component: mzi_1x2_pindiode_cband
+    params:
+      delta_length: 100
+      length: 320
+    placement:
+      rotation: 0
+      x: 1342.7939999999999
+      y: 358.333
+    properties:
+      dx: 428.3
+      dy: 512.2
+      ports: 1x2
+ports:
+  o1: N1,o1
+  o2: N4,o2
+  o3: N4,o3
+  o4: N5,o2
+  o5: N5,o3
+  o6: N6,o2
+  o7: N6,o3
+  o8: N7,o2
+  o9: N7,o3
+properties: {}

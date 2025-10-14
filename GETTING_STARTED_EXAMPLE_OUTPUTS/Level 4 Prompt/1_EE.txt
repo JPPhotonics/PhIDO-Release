@@ -1,0 +1,74 @@
+brief_summary: The text describes the design of a 1x16 power splitter using 15 1x2
+  MMIs arranged in a four-stage tree formation. Each of the 16 outputs is then connected
+  to a variable optical attenuator (VOA), a thermo-optic phase shifter, and finally
+  to a grating coupler.
+circuit_instructions: 'Design a four-stage tree: start with 1 MMI splitting into 2
+  outputs, followed by 2 MMIs splitting into 4 outputs, continuing this duplication
+  process with each subsequent stage of MMIs until there are 16 outputs. Each output
+  should connect to a VOA, then a thermo-optic phase shifter, and finally to a grating
+  coupler.'
+components_list:
+- "1\xD72 MMI"
+- "1\xD72 MMI"
+- "1\xD72 MMI"
+- "1\xD72 MMI"
+- "1\xD72 MMI"
+- "1\xD72 MMI"
+- "1\xD72 MMI"
+- "1\xD72 MMI"
+- "1\xD72 MMI"
+- "1\xD72 MMI"
+- "1\xD72 MMI"
+- "1\xD72 MMI"
+- "1\xD72 MMI"
+- "1\xD72 MMI"
+- "1\xD72 MMI"
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Variable Optical Attenuator (VOA)
+- Thermo-optic Phase Shifter
+- Thermo-optic Phase Shifter
+- Thermo-optic Phase Shifter
+- Thermo-optic Phase Shifter
+- Thermo-optic Phase Shifter
+- Thermo-optic Phase Shifter
+- Thermo-optic Phase Shifter
+- Thermo-optic Phase Shifter
+- Thermo-optic Phase Shifter
+- Thermo-optic Phase Shifter
+- Thermo-optic Phase Shifter
+- Thermo-optic Phase Shifter
+- Thermo-optic Phase Shifter
+- Thermo-optic Phase Shifter
+- Thermo-optic Phase Shifter
+- Grating Coupler
+- Grating Coupler
+- Grating Coupler
+- Grating Coupler
+- Grating Coupler
+- Grating Coupler
+- Grating Coupler
+- Grating Coupler
+- Grating Coupler
+- Grating Coupler
+- Grating Coupler
+- Grating Coupler
+- Grating Coupler
+- Grating Coupler
+- Grating Coupler
+- Grating Coupler
+title: "1\xD716 Power Splitter Design Using MMIs, VOAs, and Phase Shifters"

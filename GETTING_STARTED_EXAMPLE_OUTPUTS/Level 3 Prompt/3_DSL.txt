@@ -1,0 +1,30 @@
+doc:
+  description: The task describes the design of a three-stage 1x8 power splitter using
+    Mach-Zehnder Interferometers (MZIs) arranged in a tree structure. The first stage
+    includes 1 MZI with a 50/50 splitting ratio, the second stage includes 2 MZIs,
+    and the third stage includes 4 MZIs. All MZIs have 500nm wide waveguides suitable
+    for C-band operation.
+  labels:
+  - ''
+  reference: (link)
+  title: Design of a 1x8 Power Splitter using MZI Tree Structure
+edges: The power splitter is designed using a three-stage MZI tree structure. The
+  first stage consists of 1 MZI that splits into 2 outputs. The second stage uses
+  2 MZIs, each splitting their inputs into 4 outputs in total. The third stage comprises
+  4 MZIs, further splitting the 4 inputs into 8 outputs total.
+nodes:
+  N1:
+    component: mzi_1x2_pindiode_cband
+  N2:
+    component: mzi_1x2_pindiode_cband
+  N3:
+    component: mzi_1x2_pindiode_cband
+  N4:
+    component: mzi_1x2_pindiode_cband
+  N5:
+    component: mzi_1x2_pindiode_cband
+  N6:
+    component: mzi_1x2_pindiode_cband
+  N7:
+    component: mzi_1x2_pindiode_cband
+properties: {}

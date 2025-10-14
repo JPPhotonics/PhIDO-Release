@@ -1,0 +1,13 @@
+doc:
+  description: The task is to design a directional coupler with a 50/50 splitting
+    ratio for C-band operation. The specifications include waveguides that are 500nm
+    wide, a coupling length of 2um, and a 200nm gap between the waveguides.
+  labels:
+  - ''
+  reference: (link)
+  title: Directional coupler design with 50/50 splitting ratio for C-band
+edges: ''
+nodes:
+  N1:
+    component: _directional_coupler
+properties: {}

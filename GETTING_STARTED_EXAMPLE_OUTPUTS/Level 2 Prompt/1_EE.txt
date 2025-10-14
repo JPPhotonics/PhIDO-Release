@@ -1,0 +1,8 @@
+brief_summary: The circuit consists of two cascaded Mach-Zehnder Interferometers (MZIs),
+  each with a modulation bandwidth of up to 10 GHz. Both MZIs feature two input and
+  two output ports.
+circuit_instructions: Two cascaded MZIs.
+components_list:
+- Mach-Zehnder Interferometer (MZI) with modulation bandwidth up to 10 GHz, 2x2
+- Mach-Zehnder Interferometer (MZI) with modulation bandwidth up to 10 GHz, 2x2
+title: Cascaded MZI Modulators with 10 GHz Bandwidth

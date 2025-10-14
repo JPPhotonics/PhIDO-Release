@@ -1,0 +1,1210 @@
+doc:
+  description: The text describes the design of a 1x16 power splitter using 15 1x2
+    MMIs arranged in a four-stage tree formation. Each of the 16 outputs is then connected
+    to a variable optical attenuator (VOA), a thermo-optic phase shifter, and finally
+    to a grating coupler.
+  labels:
+  - ''
+  reference: (link)
+  title: "1\xD716 Power Splitter Design Using MMIs, VOAs, and Phase Shifters"
+edges:
+  E1:
+    link: 'N1,o2: N2,o1'
+  E10:
+    link: 'N5,o3: N11,o1'
+  E11:
+    link: 'N6,o2: N12,o1'
+  E12:
+    link: 'N6,o3: N13,o1'
+  E13:
+    link: 'N7,o2: N14,o1'
+  E14:
+    link: 'N7,o3: N15,o1'
+  E15:
+    link: 'N8,o2: N16,o1'
+  E16:
+    link: 'N16,o2: N33,o1'
+  E17:
+    link: 'N33,o2: N48,o1'
+  E18:
+    link: 'N8,o3: N17,o1'
+  E19:
+    link: 'N17,o2: N34,o1'
+  E2:
+    link: 'N1,o3: N3,o1'
+  E20:
+    link: 'N34,o2: N49,o1'
+  E21:
+    link: 'N9,o2: N18,o1'
+  E22:
+    link: 'N18,o2: N35,o1'
+  E23:
+    link: 'N35,o2: N50,o1'
+  E24:
+    link: 'N9,o3: N19,o1'
+  E25:
+    link: 'N19,o2: N36,o1'
+  E26:
+    link: 'N36,o2: N51,o1'
+  E27:
+    link: 'N10,o2: N20,o1'
+  E28:
+    link: 'N20,o2: N37,o1'
+  E29:
+    link: 'N37,o2: N52,o1'
+  E3:
+    link: 'N2,o2: N4,o1'
+  E30:
+    link: 'N10,o3: N21,o1'
+  E31:
+    link: 'N21,o2: N38,o1'
+  E32:
+    link: 'N38,o2: N53,o1'
+  E33:
+    link: 'N11,o2: N22,o1'
+  E34:
+    link: 'N22,o2: N39,o1'
+  E35:
+    link: 'N39,o2: N54,o1'
+  E36:
+    link: 'N11,o3: N23,o1'
+  E37:
+    link: 'N23,o2: N40,o1'
+  E38:
+    link: 'N40,o2: N55,o1'
+  E39:
+    link: 'N12,o2: N24,o1'
+  E4:
+    link: 'N2,o3: N5,o1'
+  E40:
+    link: 'N24,o2: N41,o1'
+  E41:
+    link: 'N41,o2: N56,o1'
+  E42:
+    link: 'N12,o3: N25,o1'
+  E43:
+    link: 'N25,o2: N42,o1'
+  E44:
+    link: 'N42,o2: N57,o1'
+  E45:
+    link: 'N13,o2: N26,o1'
+  E46:
+    link: 'N26,o2: N43,o1'
+  E47:
+    link: 'N43,o2: N58,o1'
+  E48:
+    link: 'N13,o3: N27,o1'
+  E49:
+    link: 'N27,o2: N44,o1'
+  E5:
+    link: 'N3,o2: N6,o1'
+  E50:
+    link: 'N44,o2: N59,o1'
+  E51:
+    link: 'N14,o2: N28,o1'
+  E52:
+    link: 'N28,o2: N45,o1'
+  E53:
+    link: 'N45,o2: N60,o1'
+  E54:
+    link: 'N14,o3: N29,o1'
+  E55:
+    link: 'N29,o2: N46,o1'
+  E56:
+    link: 'N46,o2: N61,o1'
+  E57:
+    link: 'N15,o2: N30,o1'
+  E58:
+    link: 'N30,o2: N47,o1'
+  E59:
+    link: 'N47,o2: N62,o1'
+  E6:
+    link: 'N3,o3: N7,o1'
+  E60:
+    link: 'N15,o3: N31,o1'
+  E61:
+    link: 'N31,o2: N63,o1'
+  E7:
+    link: 'N4,o2: N8,o1'
+  E8:
+    link: 'N4,o3: N9,o1'
+  E9:
+    link: 'N5,o2: N10,o1'
+nodes:
+  N1:
+    component: _mmi1x2
+    params:
+      gap_mmi: 0.25
+      length_mmi: 12.8
+      length_taper: 10
+      width_mmi: 3.8
+      width_taper: 1.4
+    placement:
+      rotation: 0
+      x: 339.85
+      y: 2407.639
+    properties:
+      dx: 32.8
+      dy: 3.8000000000000003
+      ports: 1x2
+  N10:
+    component: _mmi1x2
+    params:
+      gap_mmi: 0.25
+      length_mmi: 12.8
+      length_taper: 10
+      width_mmi: 3.8
+      width_taper: 1.4
+    placement:
+      rotation: 0
+      x: 1076.656
+      y: 3188.194
+    properties:
+      dx: 32.8
+      dy: 3.8000000000000003
+      ports: 1x2
+  N11:
+    component: _mmi1x2
+    params:
+      gap_mmi: 0.25
+      length_mmi: 12.8
+      length_taper: 10
+      width_mmi: 3.8
+      width_taper: 1.4
+    placement:
+      rotation: 0
+      x: 1076.656
+      y: 2834.028
+    properties:
+      dx: 32.8
+      dy: 3.8000000000000003
+      ports: 1x2
+  N12:
+    component: _mmi1x2
+    params:
+      gap_mmi: 0.25
+      length_mmi: 12.8
+      length_taper: 10
+      width_mmi: 3.8
+      width_taper: 1.4
+    placement:
+      rotation: 0
+      x: 1076.656
+      y: 1982.639
+    properties:
+      dx: 32.8
+      dy: 3.8000000000000003
+      ports: 1x2
+  N13:
+    component: _mmi1x2
+    params:
+      gap_mmi: 0.25
+      length_mmi: 12.8
+      length_taper: 10
+      width_mmi: 3.8
+      width_taper: 1.4
+    placement:
+      rotation: 0
+      x: 1076.656
+      y: 1628.472
+    properties:
+      dx: 32.8
+      dy: 3.8000000000000003
+      ports: 1x2
+  N14:
+    component: _mmi1x2
+    params:
+      gap_mmi: 0.25
+      length_mmi: 12.8
+      length_taper: 10
+      width_mmi: 3.8
+      width_taper: 1.4
+    placement:
+      rotation: 0
+      x: 1076.656
+      y: 900.694
+    properties:
+      dx: 32.8
+      dy: 3.8000000000000003
+      ports: 1x2
+  N15:
+    component: _mmi1x2
+    params:
+      gap_mmi: 0.25
+      length_mmi: 12.8
+      length_taper: 10
+      width_mmi: 3.8
+      width_taper: 1.4
+    placement:
+      rotation: 0
+      x: 1076.656
+      y: 422.917
+    properties:
+      dx: 32.8
+      dy: 3.8000000000000003
+      ports: 1x2
+  N16:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 4668.75
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N17:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 4367.361
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N18:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 4065.972
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N19:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 3764.583
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N2:
+    component: _mmi1x2
+    params:
+      gap_mmi: 0.25
+      length_mmi: 12.8
+      length_taper: 10
+      width_mmi: 3.8
+      width_taper: 1.4
+    placement:
+      rotation: 0
+      x: 776.6560000000001
+      y: 3036.806
+    properties:
+      dx: 32.8
+      dy: 3.8000000000000003
+      ports: 1x2
+  N20:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 3463.194
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N21:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 3161.806
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N22:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 2860.417
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N23:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 2559.028
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N24:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 2257.639
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N25:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 1956.25
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N26:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 1654.861
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N27:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 1353.472
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N28:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 1052.083
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N29:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 750.694
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N3:
+    component: _mmi1x2
+    params:
+      gap_mmi: 0.25
+      length_mmi: 12.8
+      length_taper: 10
+      width_mmi: 3.8
+      width_taper: 1.4
+    placement:
+      rotation: 0
+      x: 776.6560000000001
+      y: 1778.472
+    properties:
+      dx: 32.8
+      dy: 3.8000000000000003
+      ports: 1x2
+  N30:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 449.306
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N31:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 1274.861
+      y: 147.917
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N32:
+    component: pindiode_cband
+    params:
+      cross_section: strip
+      length: 500
+    placement:
+      rotation: 0
+      x: 101.25
+      y: 2614.583
+    properties:
+      dx: 510.0
+      dy: 162.20000000000002
+      ports: 1x1
+  N33:
+    component: heater_tin_cband
+    params:
+      cross_section: strip
+      length: 300
+    placement:
+      rotation: 0
+      x: 1986.917
+      y: 4668.75
+    properties:
+      dx: 397.0
+      dy: 130.0
+      ports: 1x1
+  N34:
+    component: heater_tin_cband
+    params:
+      cross_section: strip
+      length: 300
+    placement:
+      rotation: 0
+      x: 1986.917
+      y: 4367.361
+    properties:
+      dx: 397.0
+      dy: 130.0
+      ports: 1x1
+  N35:
+    component: heater_tin_cband
+    params:
+      cross_section: strip
+      length: 300
+    placement:
+      rotation: 0
+      x: 1986.917
+      y: 4065.972
+    properties:
+      dx: 397.0
+      dy: 130.0
+      ports: 1x1
+  N36:
+    component: heater_tin_cband
+    params:
+      cross_section: strip
+      length: 300
+    placement:
+      rotation: 0
+      x: 1986.917
+      y: 3764.583
+    properties:
+      dx: 397.0
+      dy: 130.0
+      ports: 1x1
+  N37:
+    component: heater_tin_cband
+    params:
+      cross_section: strip
+      length: 300
+    placement:
+      rotation: 0
+      x: 1986.917
+      y: 3463.194
+    properties:
+      dx: 397.0
+      dy: 130.0
+      ports: 1x1
+  N38:
+    component: heater_tin_cband
+    params:
+      cross_section: strip
+      length: 300
+    placement:
+      rotation: 0
+      x: 1986.917
+      y: 3161.806
+    properties:
+      dx: 397.0
+      dy: 130.0
+      ports: 1x1
+  N39:
+    component: heater_tin_cband
+    params:
+      cross_section: strip
+      length: 300
+    placement:
+      rotation: 0
+      x: 1986.917
+      y: 2860.417
+    properties:
+      dx: 397.0
+      dy: 130.0
+      ports: 1x1
+  N4:
+    component: _mmi1x2
+    params:
+      gap_mmi: 0.25
+      length_mmi: 12.8
+      length_taper: 10
+      width_mmi: 3.8
+      width_taper: 1.4
+    placement:
+      rotation: 0
+      x: 926.6560000000001
+      y: 3942.361
+    properties:
+      dx: 32.8
+      dy: 3.8000000000000003
+      ports: 1x2
+  N40:
+    component: heater_tin_cband
+    params:
+      cross_section: strip
+      length: 300
+    placement:
+      rotation: 0
+      x: 1986.917
+      y: 2559.028
+    properties:
+      dx: 397.0
+      dy: 130.0
+      ports: 1x1
+  N41:
+    component: heater_tin_cband
+    params:
+      cross_section: strip
+      length: 300
+    placement:
+      rotation: 0
+      x: 1986.917
+      y: 2257.639
+    properties:
+      dx: 397.0
+      dy: 130.0
+      ports: 1x1
+  N42:
+    component: heater_tin_cband
+    params:
+      cross_section: strip
+      length: 300
+    placement:
+      rotation: 0
+      x: 1986.917
+      y: 1956.25
+    properties:
+      dx: 397.0
+      dy: 130.0
+      ports: 1x1
+  N43:
+    component: heater_tin_cband
+    params:
+      cross_section: strip
+      length: 300
+    placement:
+      rotation: 0
+      x: 1986.917
+      y: 1654.861
+    properties:
+      dx: 397.0
+      dy: 130.0
+      ports: 1x1
+  N44:
+    component: heater_tin_cband
+    params:
+      cross_section: strip
+      length: 300
+    placement:
+      rotation: 0
+      x: 1986.917
+      y: 1353.472
+    properties:
+      dx: 397.0
+      dy: 130.0
+      ports: 1x1
+  N45:
+    component: heater_tin_cband
+    params:
+      cross_section: strip
+      length: 300
+    placement:
+      rotation: 0
+      x: 1986.917
+      y: 1052.083
+    properties:
+      dx: 397.0
+      dy: 130.0
+      ports: 1x1
+  N46:
+    component: heater_tin_cband
+    params:
+      cross_section: strip
+      length: 300
+    placement:
+      rotation: 0
+      x: 1986.917
+      y: 750.694
+    properties:
+      dx: 397.0
+      dy: 130.0
+      ports: 1x1
+  N47:
+    component: heater_tin_cband
+    params:
+      cross_section: strip
+      length: 300
+    placement:
+      rotation: 0
+      x: 1986.917
+      y: 449.306
+    properties:
+      dx: 397.0
+      dy: 130.0
+      ports: 1x1
+  N48:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2540.262
+      y: 4668.75
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N49:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2540.262
+      y: 4367.361
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N5:
+    component: _mmi1x2
+    params:
+      gap_mmi: 0.25
+      length_mmi: 12.8
+      length_taper: 10
+      width_mmi: 3.8
+      width_taper: 1.4
+    placement:
+      rotation: 0
+      x: 926.6560000000001
+      y: 3010.417
+    properties:
+      dx: 32.8
+      dy: 3.8000000000000003
+      ports: 1x2
+  N50:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2540.262
+      y: 4065.972
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N51:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2540.262
+      y: 3764.583
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N52:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2540.262
+      y: 3463.194
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N53:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2540.262
+      y: 3161.806
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N54:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2540.262
+      y: 2860.417
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N55:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2540.262
+      y: 2559.028
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N56:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2540.262
+      y: 2257.639
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N57:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2540.262
+      y: 1956.25
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N58:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2540.262
+      y: 1654.861
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N59:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2540.262
+      y: 1353.472
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N6:
+    component: _mmi1x2
+    params:
+      gap_mmi: 0.25
+      length_mmi: 12.8
+      length_taper: 10
+      width_mmi: 3.8
+      width_taper: 1.4
+    placement:
+      rotation: 0
+      x: 926.6560000000001
+      y: 1804.861
+    properties:
+      dx: 32.8
+      dy: 3.8000000000000003
+      ports: 1x2
+  N60:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2540.262
+      y: 1052.083
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N61:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2540.262
+      y: 750.694
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N62:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2540.262
+      y: 449.306
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N63:
+    component: _gc
+    params:
+      big_last_tooth: false
+      cross_section: strip
+      fiber_angle: 15
+      grating_line_width: 0.343
+      layer_slab: SLAB90
+      n_periods: 30
+      nclad: 1.443
+      neff: 2.638
+      polarization: te
+      slab_offset: 2
+      slab_xmin: -1
+      spiked: true
+      taper_angle: 40
+      taper_length: 16.6
+      wavelength: 1.554
+    placement:
+      rotation: 0
+      x: 2157.623
+      y: 147.917
+    properties:
+      dx: 55.588
+      dy: 43.15
+      ports: 1x0
+  N7:
+    component: _mmi1x2
+    params:
+      gap_mmi: 0.25
+      length_mmi: 12.8
+      length_taper: 10
+      width_mmi: 3.8
+      width_taper: 1.4
+    placement:
+      rotation: 0
+      x: 926.6560000000001
+      y: 874.306
+    properties:
+      dx: 32.8
+      dy: 3.8000000000000003
+      ports: 1x2
+  N8:
+    component: _mmi1x2
+    params:
+      gap_mmi: 0.25
+      length_mmi: 12.8
+      length_taper: 10
+      width_mmi: 3.8
+      width_taper: 1.4
+    placement:
+      rotation: 0
+      x: 1076.656
+      y: 4393.75
+    properties:
+      dx: 32.8
+      dy: 3.8000000000000003
+      ports: 1x2
+  N9:
+    component: _mmi1x2
+    params:
+      gap_mmi: 0.25
+      length_mmi: 12.8
+      length_taper: 10
+      width_mmi: 3.8
+      width_taper: 1.4
+    placement:
+      rotation: 0
+      x: 1076.656
+      y: 3915.972
+    properties:
+      dx: 32.8
+      dy: 3.8000000000000003
+      ports: 1x2
+ports:
+  o1: N1,o1
+  o2: N32,o1
+  o3: N32,o2
+properties: {}
