@@ -305,6 +305,16 @@ def run_step_by_step_circuit_dsl_creation(custom_pretemplate_yaml, custom_select
             session.p200_selected_template = custom_template_id
             session.template_selected = True
             
+            # Try to preserve original component specifications from entity extraction
+            original_pretemplate = None
+            if hasattr(session, 'step_results') and 'entity_extraction' in session.step_results:
+                original_pretemplate = session.step_results['entity_extraction'].get('pretemplate')
+            
+            # Store original specifications for later use in apply_settings
+            if original_pretemplate and 'components_list' in original_pretemplate:
+                # Store the original specifications for use in schematic generation
+                session.original_component_specifications = original_pretemplate["components_list"]
+            
             # Get template specifications
             template_specs = templates_dict[custom_template_id]["properties"]["specs"]
             
@@ -379,7 +389,17 @@ def run_step_by_step_circuit_dsl_creation(custom_pretemplate_yaml, custom_select
             session.p200_selected_components = custom_selected_components
             session.components_selected = True
             
-            # Update pretemplate with selected components
+            # Try to preserve original component specifications from entity extraction
+            original_pretemplate = None
+            if hasattr(session, 'step_results') and 'entity_extraction' in session.step_results:
+                original_pretemplate = session.step_results['entity_extraction'].get('pretemplate')
+            
+            # Store original specifications for later use in apply_settings
+            if original_pretemplate and 'components_list' in original_pretemplate:
+                # Store the original specifications for use in schematic generation
+                session.original_component_specifications = original_pretemplate["components_list"]
+            
+            # Use the selected components for the circuit DSL
             pretemplate["components_list"] = custom_selected_components
             
             # Create circuit DSL using map_pretemplate_to_template logic
@@ -452,8 +472,43 @@ def run_step_by_step_schematic_generation(custom_circuit_dsl_yaml, custom_presch
         # Initialize missing session variables for step-by-step workflow
         if not hasattr(session, 'p200_pretemplate_copy'):
             # Create a mock pretemplate from the circuit DSL for apply_settings function
+            # Try to preserve original specifications from the circuit DSL or user input
+            components_list = []
+            
+            # First, try to get original specifications from stored session data
+            if hasattr(session, 'original_component_specifications'):
+                # Use the stored original component specifications
+                components_list = session.original_component_specifications
+            else:
+                # Fallback: try to get from step results
+                original_pretemplate = None
+                if hasattr(session, 'step_results') and 'entity_extraction' in session.step_results:
+                    original_pretemplate = session.step_results['entity_extraction'].get('pretemplate')
+                
+                if original_pretemplate and 'components_list' in original_pretemplate:
+                    # Use the original component specifications from entity extraction
+                    components_list = original_pretemplate['components_list']
+                else:
+                    # Final fallback: try to preserve specifications from the circuit DSL
+                    for i, (node_id, node) in enumerate(circuit_dsl.get("nodes", {}).items(), 1):
+                        component_name = node.get("component", f"component_{i}")
+                        
+                        # Check if there are any settings or specifications in the node
+                        settings = node.get("settings", {})
+                        if settings:
+                            # Create a descriptive component name with specifications
+                            spec_parts = []
+                            for key, value in settings.items():
+                                if key != "comment":  # Skip comment fields
+                                    spec_parts.append(f"{key} of {value}")
+                            
+                            if spec_parts:
+                                component_name = f"{component_name} with " + ", ".join(spec_parts)
+                        
+                        components_list.append(component_name)
+            
             mock_pretemplate = {
-                "components_list": [node.get("component", f"component_{i}") for i, node in enumerate(circuit_dsl.get("nodes", {}).values(), 1)]
+                "components_list": components_list
             }
             session.p200_pretemplate_copy = mock_pretemplate
         
