@@ -269,9 +269,15 @@ def call_google(prompt, sys_prompt, model='gemini-2.5-pro'):
             generation_config=genai.types.GenerationConfig(
                 candidate_count=1,
                 temperature=0.1
-            )
+            ),
+            safety_settings={
+                genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+            }
         )
-        print("Using ThinkingConfig with unlimited budget")
+        print("Using ThinkingConfig with unlimited budget and disabled safety filters")
     except Exception as e:
         print(f"ThinkingConfig failed: {e}")
         try:
@@ -282,9 +288,15 @@ def call_google(prompt, sys_prompt, model='gemini-2.5-pro'):
                 generation_config=genai.types.GenerationConfig(
                     candidate_count=1,
                     temperature=0.1
-                )
+                ),
+                safety_settings={
+                    genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                    genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                    genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                    genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                }
             )
-            print("Using thinking=True parameter")
+            print("Using thinking=True parameter with disabled safety filters")
         except Exception as e2:
             print(f"Direct thinking parameter failed: {e2}")
             try:
@@ -294,9 +306,15 @@ def call_google(prompt, sys_prompt, model='gemini-2.5-pro'):
                     generation_config=genai.types.GenerationConfig(
                         candidate_count=1,
                         temperature=0.1
-                    )
+                    ),
+                    safety_settings={
+                        genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                        genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                        genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                        genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT: genai.types.HarmBlockThreshold.BLOCK_NONE,
+                    }
                 )
-                print("Using basic generation - thinking may be enabled by default")
+                print("Using basic generation with disabled safety filters")
             except Exception as e3:
                 print(f"All approaches failed: {e3}")
                 return "Error: Failed to generate content with Google Generative AI."
@@ -802,6 +820,8 @@ def call_llm(prompt, sys_prompt,llm_api_selection="nvidia/nemotron-4-340b-instru
         return call_google(prompt, sys_prompt, model='gemini-1.5-pro')
     elif llm_api_selection == "gemini-2.5-pro-preview-03-25":
         return call_google(prompt, sys_prompt, model="gemini-2.5-pro-preview-03-25")
+    elif llm_api_selection == "gemini-2.5-pro":
+        return call_google(prompt, sys_prompt, model="gemini-2.5-pro")
     elif llm_api_selection[:6] == "claude":
         return call_anthropic(prompt, sys_prompt, model=llm_api_selection)
 
