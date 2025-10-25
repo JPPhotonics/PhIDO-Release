@@ -128,8 +128,49 @@ def call_anthropic(prompt, sys_prompt, model='claude-3-7-sonnet-20250219'):
                 "role": "user",
                 "content": prompt
             }
-        ]
+        ],
+        stream=True  # Enable streaming for long requests
     )
+    
+    # Handle streaming response
+    full_content = ""
+    usage_info = None
+    
+    for chunk in message:
+        try:
+            if chunk.type == "content_block_delta":
+                # Handle thinking deltas (have 'thinking' attribute)
+                if hasattr(chunk.delta, 'thinking'):
+                    # Skip thinking content - we only want the final response
+                    pass
+                # Handle text deltas (have 'text' attribute)  
+                elif hasattr(chunk.delta, 'text'):
+                    full_content += chunk.delta.text
+            elif chunk.type == "message_delta":
+                # Capture usage information from message_delta
+                if hasattr(chunk, 'usage'):
+                    usage_info = chunk.usage
+            elif chunk.type == "message_stop":
+                # End of message
+                break
+            # Skip other chunk types (message_start, content_block_start, content_block_stop, etc.)
+        except Exception as e:
+            # Continue processing other chunks
+            continue
+    
+    # Create a mock message object with the collected content
+    class MockMessage:
+        def __init__(self, content, usage):
+            # Create content blocks that match Anthropic's structure
+            class ContentBlock:
+                def __init__(self, text):
+                    self.type = "text"
+                    self.text = text
+            
+            self.content = [ContentBlock(content)]
+            self.usage = usage
+    
+    message = MockMessage(full_content, usage_info)
     
     # Track token usage
     try:
