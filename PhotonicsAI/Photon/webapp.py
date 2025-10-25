@@ -43,11 +43,11 @@ from PhotonicsAI.Photon.drc.drc import run_drc
 # =============================================================================
 
 # LLM model configurations for different workflow steps
-entity_extraction_model = "gemini-2.5-pro"
-component_selection_model = "gemini-2.5-pro"
-component_specification_model = "gemini-2.5-pro"
-schematic_model = "gemini-2.5-pro"
-layout_model = "gemini-2.5-pro"
+entity_extraction_model = "o1"
+component_selection_model = "o1"
+component_specification_model = "o1"
+schematic_model = "o1"
+layout_model = "o1"
 
 # HTML templates for UI styling
 # Used to create consistent visual elements throughout the interface
