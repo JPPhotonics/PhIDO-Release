@@ -1,0 +1,23 @@
+Primitive: Ring Resonator
+  Source: Chapter 4, Section 4.4; Chapter 6, Section 6.3; Chapter 9, Section 9.5; Chapter 11, Section 11.1; Section 3.2.9; Section 6.4
+  Type: Component
+  PERFORMS_FUNCTION:
+    - Wavelength_Filter
+    - Modulator
+    - Amplitude_Modulator
+    - Thermo_Optic_Switch
+  BASED_ON_PRINCIPLE:
+    - Interference
+    - Evanescent_Coupling
+    - Plasma_Dispersion_Effect
+    - Thermo_Optic_Effect
+  HAS_PROPERTY:
+    - Insertion_Loss
+    - Coupling_Coefficient
+    - Wavelength_Dependence
+    - Group_Index
+    - Q-factor
+    - Free_Spectral_Range
+    - Extinction_Ratio
+    - Thermal_Sensitivity
+    - Round_Trip_Length

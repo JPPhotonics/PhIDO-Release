@@ -1,0 +1,13 @@
+Primitive: Y-Branch
+  Source: Chapter 4, Section 4.2; Section 2.2.4
+  Type: Component
+  PERFORMS_FUNCTION:
+    - Power_Splitter
+    - Light_Combiner
+  BASED_ON_PRINCIPLE:
+    - Mode_Conversion
+    - Interference
+  HAS_PROPERTY:
+    - Insertion_Loss
+    - Reciprocity
+    - Excess_Loss

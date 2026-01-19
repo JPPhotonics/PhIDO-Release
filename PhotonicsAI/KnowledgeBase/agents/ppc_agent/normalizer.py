@@ -1,0 +1,118 @@
+"""Phase B: Context retrieval and normalization using Vector Search."""
+
+import json
+from typing import List, Optional, Dict
+
+from .models import RawEntity, NormalizedEntity
+from .kb_grounding_tool import create_kb_grounding_tool
+from .acronym_agent import AcronymAgent
+
+
+class Normalizer:
+    """Normalize entities against knowledge base using Vector Search."""
+    
+    def __init__(self, kb_client, llm_model: str = "gemini-2.5-pro"):
+        """
+        Initialize normalizer.
+        
+        Args:
+            kb_client: KnowledgeBaseClient instance
+            llm_model: LLM model to use (default: gemini-2.5-pro)
+        """
+        self.kb_client = kb_client
+        self.llm_model = llm_model
+        self.kb_tool = create_kb_grounding_tool(kb_client)
+        self.acronym_agent = AcronymAgent(llm_model=llm_model)
+    
+    def normalize_entities(self, raw_entities: List[RawEntity]) -> List[NormalizedEntity]:
+        """
+        Normalize raw entities against knowledge base using Vector Search.
+        
+        Args:
+            raw_entities: List of raw extracted entities
+            
+        Returns:
+            List of normalized entities with KB matches.
+        """
+        normalized = []
+        
+        for entity in raw_entities:
+            # Map entity type to collection name
+            collection = self._entity_type_to_collection(entity.entity_type)
+            if not collection:
+                continue
+            
+            # Resolve acronyms if applicable (e.g. "MZI" -> "Mach-Zehnder Interferometer")
+            query_name = self.acronym_agent.resolve(entity.name, context=entity.context or "")
+            if query_name != entity.name:
+                print(f"    Debug: Resolved acronym '{entity.name}' -> '{query_name}'")
+            
+            # Vector Search
+            try:
+                vector_results = self._vector_search(query_name, collection)
+                
+                if vector_results:
+                    # Get best match
+                    best_match = vector_results[0]
+                    normalized.append(NormalizedEntity(
+                        raw_name=entity.name,
+                        kb_name=best_match["name"],
+                        similarity=best_match.get("similarity", 0.0),
+                        entity_type=entity.entity_type,
+                        collection=collection,
+                        top_candidates=vector_results  # Store all candidates
+                    ))
+                else:
+                    # No match found - will be handled in conflict detection
+                    normalized.append(NormalizedEntity(
+                        raw_name=entity.name,
+                        kb_name="",
+                        similarity=0.0,
+                        entity_type=entity.entity_type,
+                        collection=collection,
+                        top_candidates=[]
+                    ))
+            
+            except Exception as e:
+                print(f"Error normalizing {entity.name}: {e}")
+                # Continue with next entity
+                normalized.append(NormalizedEntity(
+                    raw_name=entity.name,
+                    kb_name="",
+                    similarity=0.0,
+                    entity_type=entity.entity_type,
+                    collection=collection,
+                    top_candidates=[]
+                ))
+        
+        return normalized
+
+    def _vector_search(self, query: str, collection: str, limit: int = 10) -> List[Dict]:
+        """Perform semantic vector search using the KB tool."""
+        try:
+            tool_result = self.kb_tool.invoke({
+                "entity_name": query,
+                "collection": collection,
+                "threshold": 0.3
+            })
+            result_data = json.loads(tool_result)
+            matches = result_data.get("matches", [])
+            print(f"    Debug: Vector search '{query}' in {collection} found {len(matches)} matches")
+            if matches:
+                top = matches[0]
+                print(f"      Top vector match: {top.get('name')} (sim: {top.get('similarity', 0.0):.3f})")
+            return matches
+        except Exception as e:
+            print(f"    Debug: Vector search error: {e}")
+            return []
+    
+    def _entity_type_to_collection(self, entity_type: str) -> Optional[str]:
+        """Map entity type to KB collection name."""
+        mapping = {
+            "Component": "Components",
+            "Architecture": "Architectures",
+            "Property": "Properties",
+            "Design_Function": "Design_Functions",
+            "Physical_Principle": "Physical_Principles"
+        }
+        return mapping.get(entity_type)

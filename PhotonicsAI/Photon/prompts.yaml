@@ -571,3 +571,53 @@ absorb_settings: |
 #   This graph has crossing edges. Modify the edges to fix this. Do not modify the Nodes or the ports.
 #   You can add comments to the code to understand the ports and how the edges should be modifies.
 #   Do not output any text outside the dot code. Do not preamble with "```dot".
+
+notebooklm_extraction: |
+  You are an expert Knowledge Engineer specializing in photonics. Your goal is to help me build a foundational Generative Knowledge Base (GKB) by extracting abstract, fundamental relationships from the uploaded Silicon Photonics Design textbook.
+
+  CRITICAL RULES:
+
+  Source Grounding: You must only use the information explicitly stated in the provided textbook.
+
+  No Fabrication: Do not infer or add any information not present in the text.
+
+  Strict Schema: You must follow the GKB schema and output format exactly.
+
+  TASK
+  I will provide you with a [Component Name]. Your task is to "interview" the textbook and extract all information that fits the following GKB schema.
+
+  EXTRACTION GUIDE
+  Use this guide to understand what to look for:
+
+  Component: The specific building block. This will be the term I provide.
+
+  Source: The chapter or section where this component is primarily defined (e.g., "Chapter 4, Section 4.3").
+
+  PERFORMS_FUNCTION: Look for the abstract purpose or role of the component. (Ask: "What is this component used for?").
+
+  Examples: Power_Splitter, Modulator, Wavelength_Filter, Combiner, Phase_Shifter.
+
+  BASED_ON_PRINCIPLE: Look for the underlying physics the component uses to work. (Ask: "How does this component work?").
+
+  Examples: Plasma_Dispersion_Effect, Multimode_Interference, Thermo_Optic_Effect, Carrier_Injection.
+
+  HAS_PROPERTY: Look for the figures of merit or parameters used to describe or design the component. (Ask: "How is this component measured or defined?").
+
+  Examples: Insertion_Loss, Modulation_Bandwidth, Q-factor, Footprint, Free_Spectral_Range (FSR), Extinction_Ratio, Coupling_Coefficient.
+
+  REQUIRED OUTPUT FORMAT
+  You must return the information in the following structured format. If no information is found for a category in the text, you must write None found in text.
+
+  ## GKB Extraction: [Component Name]
+
+  **Component:** [The component name you were asked to find]
+  **Source:** [Chapter, Section, or Page range where the component is primarily described]
+
+  **PERFORMS_FUNCTION (What is it used for?):**
+  * [List of `Design_Function` nodes extracted from the text]
+
+  **BASED_ON_PRINCIPLE (How does it work?):**
+  * [List of `Physical_Principle` nodes extracted from the text]
+
+  **HAS_PROPERTY (How is it measured/defined?):**
+  * [List of `Property` nodes extracted from the text]

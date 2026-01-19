@@ -1,0 +1,19 @@
+## GKB Extraction: Directional Coupler
+
+Primitive: Directional Coupler
+  Source: Chapter 4, Section 4.1; Chapter 9, Section 9.4
+  Type: Component
+  PERFORMS_FUNCTION: 
+    - Power_Splitter
+    - Light_Combiner
+    - Phase_Shifter
+    - Wavelength_Filter
+  BASED_ON_PRINCIPLE:
+    - Coupled_Mode_Theory
+    - Evanescent_Coupling
+  HAS_PROPERTY:
+    - Insertion_Loss
+    - Coupling_Coefficient
+    - Wavelength_Dependence
+    - Effective_Index
+    - Cross_over_Length

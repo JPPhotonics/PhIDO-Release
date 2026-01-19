@@ -1,0 +1,24 @@
+Primitive: Bragg Grating
+  Source: Chapter 4, Section 4.5; Section 2.2.3; Section 4.1.7; Section 11.1
+  Type: Component
+  PERFORMS_FUNCTION:
+    - Wavelength_Filter
+    - Reflector
+    - Modulator
+    - Thermo_Optic_Switch
+  BASED_ON_PRINCIPLE:
+    - Coupled_Mode_Theory
+    - Interference
+    - Index_Modulation
+    - Plasma_Dispersion_Effect
+  HAS_PROPERTY:
+    - Insertion_Loss
+    - Coupling_Coefficient
+    - Wavelength_Dependence
+    - Group_Index
+    - Q-factor
+    - Grating_Period
+    - Bragg_Wavelength
+    - Bandwidth
+    - Corrugation_Width
+    - Thermal_Sensitivity

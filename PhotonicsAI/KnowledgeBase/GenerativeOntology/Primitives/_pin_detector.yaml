@@ -1,0 +1,23 @@
+Primitive: PIN Detector
+  Source: Chapter 7, Section 7.3.2; Section 7.1; Section 1.4.3; Figure 7.10; Figure 7.17
+  Type: Component
+  PERFORMS_FUNCTION:
+    - Photodetector
+    - Amplitude_Modulator
+  BASED_ON_PRINCIPLE:
+    - Carrier_Generation
+    - Applied_Electric_Field_Transport
+    - RC_Response_Limitation
+    - Transit_Time_Limitation
+  HAS_PROPERTY:
+    - Responsivity
+    - Bandwidth
+    - Dark_Current
+    - Quantum_Efficiency
+    - High_Speed
+    - Low_Capacitance
+    - Detector_Resistance
+    - Intrinsic_Region
+    - Built_in_Electric_Field
+    - Vertical_Junction
+    - Lateral_Junction

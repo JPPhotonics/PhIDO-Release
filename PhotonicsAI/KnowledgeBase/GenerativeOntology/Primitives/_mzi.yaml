@@ -1,0 +1,23 @@
+Primitive: Mach–Zehnder Interferometer
+  Source: Chapter 4, Section 4.3
+  Type: Component, Architecture
+  PERFORMS_FUNCTION:
+    - Power_Splitter
+    - Light_Combiner
+    - Amplitude_Modulator
+    - Thermo_Optic_Switch
+    - Phase_Measurement
+  BASED_ON_PRINCIPLE:
+    - Interference
+    - Phase_Difference_Generation
+    - Evanescent_Coupling
+    - Plane_Wave_Approximation
+  HAS_PROPERTY:
+    - Free_Spectral_Range
+    - Group_Index
+    - Propagation_Length_Mismatch
+    - Data_Rate
+    - Insertion_Loss
+  USES_COMPONENT:
+    - Directional_Coupler
+    - Y-Branch

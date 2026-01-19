@@ -1,0 +1,26 @@
+Primitive: Grating Coupler
+  Source: Chapter 5, Section 5.2; Chapter 9, Section 9.6; Chapter 11, Section 11.1; Chapter 12, Section 12.1
+  Type: Component
+  PERFORMS_FUNCTION:
+    - Polarization_Splitter
+    - Wavelength_Filter
+    - Optical_Input_Output_Coupler
+    - Polarizer
+  BASED_ON_PRINCIPLE:
+    - Bragg_Reflection
+    - Interference
+  HAS_PROPERTY:
+    - Insertion_Loss
+    - Bandwidth
+    - Effective_Index
+    - Wavelength_Dependence
+    - Thermal_Sensitivity
+    - Grating_Period
+    - Directionality
+    - Penetration_Loss
+    - Back_Reflection
+    - Incident_Angle
+    - Etch_Depth
+    - Fill_Factor
+    - Alignment_Sensitivity
+    - S_parameters

@@ -1,0 +1,20 @@
+Primitive: Photoconductive Detector
+  Source: Chapter 1, Section 1.4.3; Chapter 7, Section 7.3.1; Section 7.1.1; Section 7.1.2
+  Type: Component
+  PERFORMS_FUNCTION:
+    - Photodetector
+    - Modulator
+    - Variable_Optical_Attenuator
+  BASED_ON_PRINCIPLE:
+    - Carrier_Generation
+    - Applied_Electric_Field_Transport
+    - Photoconductive_Mode
+  HAS_PROPERTY:
+    - Responsivity
+    - Bandwidth
+    - Dark_Current
+    - Capacitance
+    - Low_Capacitance
+    - High_Speed
+    - Quantum_Efficiency
+    - Undoped_Active_Region

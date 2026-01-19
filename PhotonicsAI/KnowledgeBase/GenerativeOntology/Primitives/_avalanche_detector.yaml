@@ -1,0 +1,24 @@
+Primitive: Avalanche Detector
+  Source: Chapter 7, Section 7.3.3; Section 7.1; Section 1.4.3
+  Type: Component
+  PERFORMS_FUNCTION:
+    - Photodetector
+    - Amplitude_Modulator
+    - Internal_Gain
+  BASED_ON_PRINCIPLE:
+    - Carrier_Generation
+    - Applied_Electric_Field_Transport
+    - Carrier_Avalanche
+    - Impact_Ionization
+    - Single_Carrier_Initiated_Avalanche
+  HAS_PROPERTY:
+    - Responsivity
+    - Bandwidth
+    - Noise
+    - Quantum_Efficiency
+    - High_Speed
+    - Multiplication_Factor
+    - Excess_Noise_Factor
+    - Ionization_Coefficients
+    - Breakdown_Voltage
+    - Charge_Region_Design

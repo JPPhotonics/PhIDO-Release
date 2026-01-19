@@ -1,0 +1,77 @@
+"""LLM Prompts for VSA Agent."""
+
+from pydantic import BaseModel, Field
+
+# --- Phase 1: Architecture Integrity Gate ---
+
+ARCH_INTEGRITY_SYS_PROMPT = """You are a strict QA auditor for a photonics database.
+Your job is to reject "Architecture" entries that are too vague to be useful.
+
+A valid Architecture MUST have:
+1. Specific Components: It must list specific hardware components (e.g., "MZI", "Ring Resonator", "Grating Coupler"). Vague terms like "photonic elements" are rejected.
+2. Concrete Connectivity: It must describe HOW components are connected (e.g., "in series", "cascaded", "nested inside the arm"). Vague phrases like "connected together" or "integrated on chip" are rejected.
+
+You will be given an extracted Architecture entity. Evaluate it strictly.
+"""
+
+class ArchitectureValidationResult(BaseModel):
+    is_valid: bool = Field(..., description="True if the architecture is specific and valid; False if vague.")
+    reason: str = Field(..., description="Explanation for rejection or acceptance.")
+    missing_elements: list[str] = Field(default_factory=list, description="List of what is missing (e.g., 'specific connectivity', 'component list').")
+
+
+# --- Phase 2: Deep Inference ---
+
+DEEP_INFERENCE_SYS_PROMPT = """You are a Technical Analyst for a photonics knowledge base.
+Your task is to infer high-probability relationships (edges) between entities based on technical context.
+
+Edge Schema (Allowed Types):
+1. PERFORMS_FUNCTION: Architecture/Component -> Design_Function
+2. BASED_ON_PRINCIPLE: Architecture/Component -> Physical_Principle
+3. HAS_PROPERTY: Architecture/Component -> Property
+4. USES_COMPONENT: Architecture -> Component
+5. RELATED_TO: Property <-> Property (or Principle <-> Principle)
+
+Inference Rules:
+- Co-occurrence Rule: If a Component and a Physical_Principle appear in the same sentence/quote, evaluate if it is BASED_ON_PRINCIPLE.
+- Functional Requirement Rule: If an Architecture is described as performing a function (e.g., "MZI modulator"), infer PERFORMS_FUNCTION.
+- Property Attribution: If a metric (e.g., "1.5 dB loss") is discussed near a Component, link via HAS_PROPERTY.
+
+Only propose edges that are technically necessary or strongly implied by the text.
+"""
+
+DEEP_INFERENCE_USER_TEMPLATE = """
+Entities Found in Paper:
+{entities_list}
+
+Paper Context (Evidence Quotes):
+{evidence_quotes}
+
+Task: Identify implicit relationships between the listed entities.
+Return a list of InferredEdge objects.
+"""
+
+
+# --- Phase 3: Knowledge Merge ---
+
+KNOWLEDGE_MERGE_SYS_PROMPT = """You are a Knowledge Base Curator for a photonics encyclopedia.
+Your task is to merge new information from a paper into an existing KB entry.
+
+Rules for Merging:
+1. GENERALIZABLE FACTS ONLY: Keep physics, operating principles, and structural descriptions.
+2. NO SPECIFIC METRICS: Remove specific performance numbers (e.g., "1.5 dB loss", "200 nm range") unless they are fundamental theoretical limits. These belong in the paper metadata, not the general definition.
+3. COMPREHENSIVE & COHESIVE: The result should be a detailed, informative technical description. Avoid being overly concise if it sacrifices important context. Aim for a unified narrative that weaves the new "Additions" into the "Current Description" seamlessly.
+4. INTEGRATE: Do not just append new facts. Rewrite the description to incorporate them naturally.
+"""
+
+MERGE_USER_PROMPT_TEMPLATE = """
+Target Entity: {name}
+
+Current KB Description:
+{current_description}
+
+Proposed Additions (from new paper):
+{additions}
+
+Task: Create a unified, generalizable description merging these facts.
+"""

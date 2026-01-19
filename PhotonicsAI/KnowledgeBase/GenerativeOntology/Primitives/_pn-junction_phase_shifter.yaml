@@ -1,0 +1,21 @@
+Primitive: pn-Junction Phase Shifter
+  Source: Chapter 6, Section 6.2; Section 6.1; Section 2.2.3; Section 1.4.2
+  Type: Component
+  PERFORMS_FUNCTION:
+    - Phase_Shifter
+    - Modulator
+    - Amplitude_Modulator
+  BASED_ON_PRINCIPLE:
+    - Plasma_Dispersion_Effect
+    - Index_Modulation
+    - Carrier_Injection
+    - Phase_Difference_Generation
+  HAS_PROPERTY:
+    - Insertion_Loss
+    - Bandwidth
+    - Effective_Index
+    - RC_Time_Constant
+    - Capacitance
+    - Junction_Resistance
+    - VπL_Product
+    - Voltage_Dependence

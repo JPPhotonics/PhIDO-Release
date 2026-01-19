@@ -647,7 +647,7 @@ def callgpt_pydantic(prompt, sys_prompt, pydantic_model):
     client = OpenAI()
 
     completion = client.beta.chat.completions.parse(
-        model="gpt-4o-2024-08-06",
+        model="o3-mini",
         messages=[
             {"role": "system", "content": sys_prompt},
             {"role": "user", "content": prompt},
@@ -689,29 +689,216 @@ def calldeepseek_pydantic(prompt, sys_prompt, pydantic_model):
         return message.refusal
 
 def callgoogle_pydantic(prompt, sys_prompt, pydantic_model):
-    genai.configure(api_key=os.getenv("GOOGLEGENAI_API_KEY"))
-    prompt = truncate_prompt(prompt)
-    model=genai.GenerativeModel(
-    model_name='gemini-1.5-pro',
-    system_instruction=sys_prompt)
+    """
+    Call a Gemini model and parse the response into a Pydantic model using structured outputs.
 
-    response = model.generate_content(prompt,
-        generation_config=genai.types.GenerationConfig(
-            candidate_count=1,
-            temperature=0.5,
-            response_mime_type='application/json',
-            response_schema=pydantic_model)
+    Prefers the modern Google GenAI SDK (`google-genai`, importable as `from google import genai`)
+    structured output API:
+      - config.response_mime_type = "application/json"
+      - config.response_json_schema = <JSON Schema>
+
+    Reference: [Gemini structured outputs](https://ai.google.dev/gemini-api/docs/structured-output?example=recipe)
+    """
+
+    # Keep prompt size bounded (shared helper used across providers)
+    prompt = truncate_prompt(prompt)
+
+    # API key env var compatibility: repo historically used GOOGLEGENAI_API_KEY
+    api_key = (
+        os.getenv("GOOGLEGENAI_API_KEY")
+        or os.getenv("GEMINI_API_KEY")
+        or os.getenv("GOOGLE_API_KEY")
+    )
+
+    # Default model for the legacy `google.generativeai` SDK.
+    # (Override via GOOGLE_GENAI_MODEL.)
+    model_name = os.getenv("GOOGLE_GENAI_MODEL", "gemini-2.5-pro")
+
+    # Helper: robustly extract JSON from a response that might contain wrappers/fences.
+    def _strip_code_fences(txt: str) -> str:
+        txt = (txt or "").strip()
+        m = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", txt, re.IGNORECASE)
+        return m.group(1).strip() if m else txt
+
+    def _extract_balanced_json(txt: str) -> str:
+        s = _strip_code_fences(txt)
+        for opener, closer in [("[", "]"), ("{", "}")]:
+            start = s.find(opener)
+            if start == -1:
+                continue
+            depth = 0
+            in_str = False
+            esc = False
+            for i in range(start, len(s)):
+                ch = s[i]
+                if in_str:
+                    if esc:
+                        esc = False
+                    elif ch == "\\":
+                        esc = True
+                    elif ch == '"':
+                        in_str = False
+                    continue
+                else:
+                    if ch == '"':
+                        in_str = True
+                        continue
+                    if ch == opener:
+                        depth += 1
+                    elif ch == closer:
+                        depth -= 1
+                        if depth == 0:
+                            return s[start : i + 1]
+        return s
+
+    # Primary path: legacy google.generativeai SDK (this is what is installed/working here).
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(model_name=model_name, system_instruction=sys_prompt)
+
+    schema = pydantic_model.model_json_schema()
+    
+    # Helper to recursively remove fields which are not supported by Gemini's schema validator
+    def _clean_schema(d):
+        if isinstance(d, dict):
+            d.pop("title", None)
+            d.pop("default", None)
+            # anyOf is also sometimes problematic if not strictly structured, but 'default' is definitely rejected
+            for v in d.values():
+                _clean_schema(v)
+        elif isinstance(d, list):
+            for v in d:
+                _clean_schema(v)
+    
+    _clean_schema(schema)
+
+    # Legacy SDK schema support is limited and often rejects Pydantic v2 constructs like `$defs`.
+    schema_has_refs = isinstance(schema, dict) and (
+        ("$defs" in schema) or ("$ref" in json.dumps(schema))
+    )
+
+    if schema_has_refs:
+        # Avoid response_schema entirely; enforce shape via prompt and validate locally.
+        json_schema_hint = json.dumps(schema, indent=2)
+        prompt_to_send = (
+            f"{prompt}\n\n"
+            "Return ONLY valid JSON matching this JSON Schema (no markdown, no extra text):\n"
+            f"{json_schema_hint}"
+        )
+        response = model.generate_content(
+            prompt_to_send,
+            generation_config=genai.types.GenerationConfig(
+                candidate_count=1,
+                temperature=0.5,
+                response_mime_type="application/json",
+            ),
+        )
+    else:
+        # Try native schema support when the schema looks legacy-compatible.
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                candidate_count=1,
+                temperature=0.5,
+                response_mime_type="application/json",
+                response_schema=schema,
+            ),
+        )
+
+    # Track token usage
+    try:
+        # Get token counts from response metadata
+        input_tokens = 0
+        output_tokens = 0
+        
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            usage_metadata = response.usage_metadata
+            # Get input tokens
+            if hasattr(usage_metadata, 'prompt_token_count'):
+                input_tokens = usage_metadata.prompt_token_count
+            elif hasattr(usage_metadata, 'input_token_count'):
+                input_tokens = usage_metadata.input_token_count
+            
+            # Get output tokens
+            if hasattr(usage_metadata, 'candidates_token_count'):
+                output_tokens = usage_metadata.candidates_token_count
+            elif hasattr(usage_metadata, 'output_token_count'):
+                output_tokens = usage_metadata.output_token_count
+                
+        print(f"Google Pydantic response usage - Input: {input_tokens}, Output: {output_tokens}")
+        # Add to global token usage (assuming not cached for now)
+        add_token_usage(input_tokens, output_tokens, is_cached=False)
+        
+    except Exception as e:
+        # If token tracking fails, continue without it
+        print(f"Token tracking error in callgoogle_pydantic: {e}")
+
+    raw = getattr(response, "text", None) or ""
+    try:
+        return pydantic_model.model_validate_json(raw)
+    except Exception:
+        return pydantic_model.model_validate_json(_extract_balanced_json(raw))
+
+def call_google_vlm(prompt, image_path, sys_prompt=None, model="gemini-2.0-flash"):
+    """
+    Call Google Gemini VLM with an image input.
+    
+    Args:
+        prompt: Text prompt to analyze the image
+        image_path: Path to the image file (pathlib.Path or str)
+        sys_prompt: Optional system instruction
+        model: Gemini model name (default: gemini-2.0-flash)
+    
+    Returns:
+        str: The text response from the model
+    """
+    try:
+        import google.generativeai as genai
+        import PIL.Image
+    except ImportError:
+        return "Error: google-generativeai or pillow library not installed."
+
+    api_key = (
+        os.getenv("GOOGLEGENAI_API_KEY")
+        or os.getenv("GEMINI_API_KEY")
+        or os.getenv("GOOGLE_API_KEY")
     )
     
-    with open('google_response.yml', 'w') as outfile:
-        yaml.dump(response.text, outfile)
+    if not api_key:
+        return "Error: No Google API key found."
+
+    genai.configure(api_key=api_key)
     
-    class Struct:
-        def __init__(self, **entries):
-            self.__dict__.update(entries)
-    response_dict = json.loads(response.text)
-    s = Struct(**response_dict)
-    return s
+    try:
+        img = PIL.Image.open(image_path)
+    except Exception as e:
+        return f"Error opening image {image_path}: {e}"
+
+    try:
+        model_instance = genai.GenerativeModel(model_name=model)
+        
+        # Construct content parts
+        content = []
+        if sys_prompt:
+            content.append(f"System: {sys_prompt}\n\n")
+        content.append(prompt)
+        content.append(img)
+        
+        response = model_instance.generate_content(content)
+        
+        # Track token usage if available (simple estimation for now)
+        try:
+            # Estimate: Image is roughly 258 tokens (standard for Gemini), text is ~1.3 tokens/word
+            input_tokens = 258 + len(prompt.split()) * 2
+            output_tokens = len(response.text.split()) * 2
+            add_token_usage(input_tokens, output_tokens, is_cached=False)
+            print(f"Google VLM usage (est) - Input: {input_tokens}, Output: {output_tokens}")
+        except:
+            pass
+
+        return response.text
+    except Exception as e:
+        print(f"Google VLM call failed: {e}")
+        return f"Error processing image: {e}"
 
 def parse_and_validate_list(string):
     """Parse and validate a list from a string.
@@ -875,16 +1062,9 @@ def call_llm(prompt, sys_prompt,llm_api_selection="nvidia/nemotron-4-340b-instru
         return call_deepseek(
             prompt, sys_prompt, llm_api_selection
             )
-    elif llm_api_selection == 'gemini-1.5-flash':
-        return call_google(prompt, sys_prompt, model='gemini-1.5-flash')
-    elif llm_api_selection == 'gemini-2.0-flash':
-        return call_google(prompt, sys_prompt, model='gemini-2.0-flash')
-    elif llm_api_selection == 'gemini-1.5-pro':
-        return call_google(prompt, sys_prompt, model='gemini-1.5-pro')
-    elif llm_api_selection == "gemini-2.5-pro-preview-03-25":
-        return call_google(prompt, sys_prompt, model="gemini-2.5-pro-preview-03-25")
-    elif llm_api_selection == "gemini-2.5-pro":
-        return call_google(prompt, sys_prompt, model="gemini-2.5-pro")
+    elif llm_api_selection.startswith("gemini-"):
+        # Support any Gemini model by passing it directly to call_google
+        return call_google(prompt, sys_prompt, model=llm_api_selection)
     elif llm_api_selection[:6] == "claude":
         return call_anthropic(prompt, sys_prompt, model=llm_api_selection)
 

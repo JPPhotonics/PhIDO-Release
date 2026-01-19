@@ -1,0 +1,37 @@
+Primitive: Micro-ring Modulators
+  Source: Chapter 4, Section 4.4; Chapter 6, Section 6.3; Section 1.4.2; Section 9.5; Section 13.1
+  Type: Component, Architecture
+  PERFORMS_FUNCTION:
+    - Wavelength_Filter
+    - Modulator
+    - Amplitude_Modulator
+    - Phase_Shifter
+  BASED_ON_PRINCIPLE:
+    - Resonance
+    - Plasma_Dispersion_Effect
+    - Interference
+    - Index_Modulation
+    - Phase_Difference_Generation
+    - Evanescent_Coupling
+    - Thermo_Optic_Effect
+    - Carrier_Depletion
+  HAS_PROPERTY:
+    - Insertion_Loss
+    - Bandwidth
+    - Q-factor
+    - Free_Spectral_Range
+    - Extinction_Ratio
+    - Thermal_Sensitivity
+    - Capacitance
+    - RC_Time_Constant
+    - Round_Trip_Length
+    - Photon_Lifetime
+    - Tuneability
+    - Drive_Voltage
+    - Modulation_Power_Efficiency
+    - Critical_Coupling
+    - Double_Bus_Architecture
+  USES_COMPONENT:
+    - pn-Junction_Phase_Shifter
+    - Directional_Coupler
+    - Ring_Resonator

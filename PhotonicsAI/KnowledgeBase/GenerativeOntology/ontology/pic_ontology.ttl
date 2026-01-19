@@ -1,0 +1,106 @@
+@prefix : <http://www.photonics.ai/ontology/pic#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xml: <http://www.w3.org/XML/1998/namespace> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix saref: <https://saref.etsi.org/core/> .
+@prefix sosa: <http://www.w3.org/ns/sosa/> .
+@prefix ssn: <http://www.w3.org/ns/ssn/> .
+@prefix qudt: <http://qudt.org/schema/qudt/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix bfo: <http://purl.obolibrary.org/obo/BFO_> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+<http://www.photonics.ai/ontology/pic> rdf:type owl:Ontology ;
+                                       rdfs:comment "Ontology for Photonic Integrated Circuits Knowledge Graph"@en .
+
+#################################################################
+#    Classes
+#################################################################
+
+###  http://www.photonics.ai/ontology/pic#Component
+:Component rdf:type owl:Class ;
+           rdfs:subClassOf saref:Device ,
+                           sosa:FeatureOfInterest ;
+           rdfs:comment "A photonic component (e.g., MZM, Waveguide)"@en .
+
+###  http://www.photonics.ai/ontology/pic#Architecture
+:Architecture rdf:type owl:Class ;
+              rdfs:subClassOf :Component ;
+              rdfs:comment "A complex photonic architecture (e.g., MZI) composed of components"@en .
+
+###  http://www.photonics.ai/ontology/pic#DesignFunction
+:DesignFunction rdf:type owl:Class ;
+                rdfs:subClassOf saref:Function ;
+                rdfs:comment "The function performed by a component (e.g., Modulation)"@en .
+
+###  http://www.photonics.ai/ontology/pic#PhysicalPrinciple
+:PhysicalPrinciple rdf:type owl:Class ;
+                   rdfs:subClassOf bfo:0000015 ; # Process
+                   rdfs:comment "Underlying physical mechanism (e.g., Plasma Dispersion)"@en .
+
+###  http://www.photonics.ai/ontology/pic#Property
+:Property rdf:type owl:Class ;
+          rdfs:subClassOf qudt:QuantityKind ,
+                          sosa:ObservableProperty ;
+          rdfs:comment "A property concept (e.g., Insertion Loss)"@en .
+
+###  http://www.photonics.ai/ontology/pic#Document
+:Document rdf:type owl:Class ;
+          rdfs:subClassOf prov:Entity ;
+          rdfs:comment "Source document"@en .
+
+###  http://www.photonics.ai/ontology/pic#ComponentObservation
+:ComponentObservation rdf:type owl:Class ;
+                      rdfs:subClassOf sosa:Observation ;
+                      rdfs:comment "An observation linking a component to a property value"@en .
+
+#################################################################
+#    Object Properties
+#################################################################
+
+###  http://www.photonics.ai/ontology/pic#performsFunction
+:performsFunction rdf:type owl:ObjectProperty ;
+                  rdfs:domain :Component ;
+                  rdfs:range :DesignFunction ;
+                  rdfs:label "PERFORMS_FUNCTION"@en .
+
+###  http://www.photonics.ai/ontology/pic#basedOnPrinciple
+:basedOnPrinciple rdf:type owl:ObjectProperty ;
+                  rdfs:domain :Component ;
+                  rdfs:range :PhysicalPrinciple ;
+                  rdfs:label "BASED_ON_PRINCIPLE"@en .
+
+###  http://www.photonics.ai/ontology/pic#usesComponent
+:usesComponent rdf:type owl:ObjectProperty ;
+               rdfs:domain :Architecture ;
+               rdfs:range :Component ;
+               rdfs:label "USES_COMPONENT"@en .
+
+###  http://www.photonics.ai/ontology/pic#extractedFrom
+:extractedFrom rdf:type owl:ObjectProperty ;
+               rdfs:domain :Component ;
+               rdfs:range :Document ;
+               rdfs:label "EXTRACTED_FROM"@en .
+
+###  http://www.photonics.ai/ontology/pic#relatedTo
+:relatedTo rdf:type owl:ObjectProperty ;
+           rdfs:domain owl:Thing ;
+           rdfs:range owl:Thing ;
+           rdfs:label "RELATED_TO"@en .
+
+#################################################################
+#    Data Properties for Observations
+#################################################################
+
+###  http://qudt.org/schema/qudt/numericValue
+qudt:numericValue rdf:type owl:DatatypeProperty ;
+                  rdfs:domain :ComponentObservation ;
+                  rdfs:range xsd:double .
+
+###  http://qudt.org/schema/qudt/unit
+qudt:unit rdf:type owl:DatatypeProperty ;
+          rdfs:domain :ComponentObservation ;
+          rdfs:range xsd:string .
+

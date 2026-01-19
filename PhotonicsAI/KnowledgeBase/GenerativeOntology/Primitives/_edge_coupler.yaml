@@ -1,0 +1,16 @@
+Primitive: Edge Coupler
+  Source: Chapter 5, Section 5.3; Chapter 12, Section 12.1.1
+  Type: Component
+  PERFORMS_FUNCTION:
+    - Optical_Input_Output_Coupler
+    - Polarization_Handling
+  BASED_ON_PRINCIPLE:
+    - Spot_Size_Conversion
+    - Mode_Overlap_Maximization
+  HAS_PROPERTY:
+    - Insertion_Loss
+    - Alignment_Sensitivity
+    - Bandwidth
+    - Wide_Bandwidth
+    - High_NA_Fiber_Requirement
+    - Facet_Quality_Requirement

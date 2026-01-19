@@ -1,0 +1,18 @@
+Primitive: Thermal Phase Shifter
+  Source: Chapter 6, Sections 6.5.2, 6.6; Section 3.1.1; Section 2.5
+  Type: Component
+  PERFORMS_FUNCTION:
+    - Phase_Shifter
+    - Thermo_Optic_Switch
+  BASED_ON_PRINCIPLE:
+    - Thermo_Optic_Effect
+    - Index_Modulation
+    - Phase_Difference_Generation
+  HAS_PROPERTY:
+    - Insertion_Loss
+    - Bandwidth
+    - Thermal_Sensitivity
+    - Tuning_Efficiency
+    - Thermal_Time_Constant
+    - Pure_Phase_Shift
+    - Thermal_Isolation

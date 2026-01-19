@@ -1,0 +1,18 @@
+Primitive: Forward-biased PIN Junction
+  Source: Chapter 6, Section 6.4; Section 6.1; Section 2.2.3; Section 1.4.2
+  Type: Component
+  PERFORMS_FUNCTION:
+    - Phase_Shifter
+    - Modulator
+    - Variable_Optical_Attenuator
+  BASED_ON_PRINCIPLE:
+    - Plasma_Dispersion_Effect
+    - Index_Modulation
+    - Carrier_Injection
+  HAS_PROPERTY:
+    - Insertion_Loss
+    - Bandwidth
+    - Carrier_Recombination_Lifetime
+    - Attenuation_Efficiency
+    - Tuning_Efficiency
+    - Doping_Offset
