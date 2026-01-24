@@ -18,7 +18,6 @@ Primitive: Avalanche Detector
     - Quantum_Efficiency
     - High_Speed
     - Multiplication_Factor
-    - Excess_Noise_Factor
     - Ionization_Coefficients
     - Breakdown_Voltage
     - Charge_Region_Design

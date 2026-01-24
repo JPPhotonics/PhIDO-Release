@@ -45,8 +45,8 @@ class ConflictDetector:
         new_concepts = []
         
         # Thresholds
-        HIGH_SIMILARITY = 0.8  # Known entity
-        LOW_SIMILARITY = 0.4   # New concept (lowered from 0.5)
+        HIGH_SIMILARITY = 0.9  # Known entity (raised from 0.8)
+        LOW_SIMILARITY = 0.7   # New concept (raised from 0.4)
         
         # Create mapping from raw name to context/description and describer artifacts
         # context: evidence pack (preferred) or brief extractor context
@@ -126,9 +126,26 @@ class ConflictDetector:
             known_entities.extend(resolved["known"])
             new_concepts.extend(resolved["new"])
         
+        # Deduplicate known_entities based on KB name to avoid repetitive listing
+        unique_known_entities = []
+        seen_kb_names = set()
+        for entity in known_entities:
+            if entity.kb_name not in seen_kb_names:
+                seen_kb_names.add(entity.kb_name)
+                unique_known_entities.append(entity)
+
+        # Deduplicate new_concepts based on case-insensitive name
+        unique_new_concepts = []
+        seen_new_names = set()
+        for concept in new_concepts:
+            name_lower = concept.name.lower().strip()
+            if name_lower not in seen_new_names:
+                seen_new_names.add(name_lower)
+                unique_new_concepts.append(concept)
+        
         return PPCResult(
-            known_entities=known_entities,
-            new_concepts=new_concepts
+            known_entities=unique_known_entities,
+            new_concepts=unique_new_concepts
         )
     
     def _resolve_ambiguous_entities(

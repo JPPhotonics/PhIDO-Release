@@ -7,7 +7,8 @@ from pathlib import Path
 import inspect
 
 from PhotonicsAI.KnowledgeBase.agents.ppc_agent import PPCAgent
-from PhotonicsAI.KnowledgeBase.ArangoDB import KnowledgeBaseClient, ArangoDBConfig
+from PhotonicsAI.KnowledgeBase.Neo4j.client import Neo4jClient as KnowledgeBaseClient
+from PhotonicsAI.KnowledgeBase.Neo4j.config import Neo4jConfig
 from PhotonicsAI.Photon import llm_api
 
 
@@ -253,13 +254,7 @@ def test_kb_grounding_tool():
     print("=" * 60)
     
     try:
-        config = ArangoDBConfig(
-            host=os.getenv("ARANGO_HOST", "localhost"),
-            port=int(os.getenv("ARANGO_PORT", "8529")),
-            username=os.getenv("ARANGO_USERNAME", "root"),
-            password=os.getenv("ARANGO_PASSWORD", "my_secure_password"),
-            database=os.getenv("ARANGO_DATABASE", "photonics_kb")
-        )
+        config = Neo4jConfig()
         kb_client = KnowledgeBaseClient(config=config)
         kb_client.connect()
         
@@ -287,15 +282,9 @@ def test_kb_grounding_tool():
         print("\n✓ KB Grounding Tool test passed\n")
     
     except ConnectionError as e:
-        print(f"⚠ Connection Error: {e}")
-        print("  ArangoDB is not running or not accessible.")
-        print("\n  To start ArangoDB:")
-        print("  1. Run the helper script: ./start_arangodb.sh")
-        print("  2. Or manually:")
-        print("     sudo docker start arangodb  # if container exists")
-        print("     sudo docker run -d --name arangodb -p 8529:8529 -e ARANGO_ROOT_PASSWORD=my_password arangodb:latest  # if new")
-        print("  3. Check status: sudo docker ps | grep arangodb")
-        print("  4. Check logs: sudo docker logs arangodb\n")
+        print(f"⚠ Connection Error: Neo4j is not running or not accessible.")
+        print("\n  To start Neo4j:")
+        print("  sudo docker run -d --name neo4j-phido -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/password -e NEO4J_PLUGINS='[\"apoc\", \"graph-data-science\"]' -e NEO4J_dbms_security_procedures_unrestricted=apoc.*,gds.* neo4j:5.15-enterprise\n")
     except Exception as e:
         error_msg = str(e)
         if "Connection refused" in error_msg or "Can't connect" in error_msg:
@@ -366,13 +355,7 @@ def test_normalizer():
     print("=" * 60)
 
     try:
-        config = ArangoDBConfig(
-            host=os.getenv("ARANGO_HOST", "localhost"),
-            port=int(os.getenv("ARANGO_PORT", "8529")),
-            username=os.getenv("ARANGO_USERNAME", "root"),
-            password=os.getenv("ARANGO_PASSWORD", "my_secure_password"),
-            database=os.getenv("ARANGO_DATABASE", "photonics_kb")
-        )
+        config = Neo4jConfig()
         kb_client = KnowledgeBaseClient(config=config)
         kb_client.connect()
 
@@ -395,7 +378,7 @@ def test_normalizer():
     except Exception as e:
         error_msg = str(e)
         if "Connection refused" in error_msg or "Can't connect" in error_msg:
-            print(f"⚠ Connection Error: ArangoDB is not accessible; skipping normalizer test.\n")
+            print(f"⚠ Connection Error: Neo4j is not accessible; skipping normalizer test.\n")
         else:
             print(f"Error in normalizer test: {e}")
             import traceback
@@ -424,13 +407,7 @@ def test_full_pipeline_text():
     """
     
     try:
-        config = ArangoDBConfig(
-            host=os.getenv("ARANGO_HOST", "localhost"),
-            port=int(os.getenv("ARANGO_PORT", "8529")),
-            username=os.getenv("ARANGO_USERNAME", "root"),
-            password=os.getenv("ARANGO_PASSWORD", "my_secure_password"),
-            database=os.getenv("ARANGO_DATABASE", "photonics_kb")
-        )
+        config = Neo4jConfig()
         kb_client = KnowledgeBaseClient(config=config)
         kb_client.connect()
 
@@ -504,15 +481,9 @@ def test_full_pipeline_pdf():
     
     try:
         # Create KB client with explicit config
-        config = ArangoDBConfig(
-            host=os.getenv("ARANGO_HOST", "localhost"),
-            port=int(os.getenv("ARANGO_PORT", "8529")),
-            username=os.getenv("ARANGO_USERNAME", "root"),
-            password=os.getenv("ARANGO_PASSWORD", "my_secure_password"),  # Must match Docker ARANGO_ROOT_PASSWORD
-            database=os.getenv("ARANGO_DATABASE", "photonics_kb")
-        )
+        config = Neo4jConfig()
 
-        print(f"Connecting to ArangoDB at {config.connection_url}")
+        print(f"Connecting to Neo4j at {config.uri}")
         print(f"  Database: {config.database}")
         print(f"  Username: {config.username}\n")
 

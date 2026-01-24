@@ -219,7 +219,15 @@ class PPCAgent:
 
         # Phase B: Normalization
         print("Phase B: Normalizing entities against KB...")
-        normalized_entities = self.normalizer.normalize_entities(raw_entities)
+        # Convert describer object to dict if it isn't already (it might be EntityDescriptionList)
+        descriptions_map = described
+        if hasattr(described, "entities"):
+             # If it's a Pydantic list wrapper, map it: name -> dict
+             descriptions_map = {d.name: d.dict() for d in described.entities}
+        elif isinstance(described, list):
+             descriptions_map = {d["name"]: d for d in described}
+             
+        normalized_entities = self.normalizer.normalize_entities(raw_entities, descriptions=descriptions_map)
         print(f"Normalized {len(normalized_entities)} entities")
 
         # Prepare context/description for conflict detection

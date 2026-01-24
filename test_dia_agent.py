@@ -8,7 +8,8 @@ from pathlib import Path
 
 from PhotonicsAI.KnowledgeBase.agents.dia_agent import DIAAgent
 from PhotonicsAI.KnowledgeBase.agents.vsa_agent.models import VSAUpdatePayload
-from PhotonicsAI.KnowledgeBase.ArangoDB import KnowledgeBaseClient, ArangoDBConfig
+from PhotonicsAI.KnowledgeBase.Neo4j.client import Neo4jClient as KnowledgeBaseClient
+from PhotonicsAI.KnowledgeBase.Neo4j.config import Neo4jConfig
 from PhotonicsAI.Photon import llm_api
 
 class LLMTracer:
@@ -285,106 +286,50 @@ def generate_dia_performance_report(json_path: Path, output_html_path: Path) -> 
 
 
 def _setup_real_agent():
-    """Setup DIA Agent with real ArangoDB connection."""
-    config = ArangoDBConfig(
-        host=os.getenv("ARANGO_HOST", "localhost"),
-        port=int(os.getenv("ARANGO_PORT", "8529")),
-        username=os.getenv("ARANGO_USERNAME", "root"),
-        password=os.getenv("ARANGO_PASSWORD", "my_secure_password"),
-        database=os.getenv("ARANGO_DATABASE", "photonics_kb")
-    )
+    """Setup DIA Agent with real Neo4j connection."""
+    config = Neo4jConfig()
     
-    print(f"Connecting to ArangoDB at {config.connection_url}...")
+    print(f"Connecting to Neo4j at {config.uri}...")
     try:
         client = KnowledgeBaseClient(config=config)
         client.connect()
-        print("✓ Connected to ArangoDB")
+        print("✓ Connected to Neo4j")
         return DIAAgent(kb_client=client, llm_model="gemini-2.5-pro")
     except Exception as e:
-        print(f"X Failed to connect to ArangoDB: {e}")
-        print("  Make sure ArangoDB is running: ./start_arangodb.sh")
+        print(f"X Failed to connect to Neo4j: {e}")
+        print("  Make sure Neo4j is running.")
         raise e
 
 def _visualize_knowledgebase(client, output_filename="dia_knowledgebase.html"):
     """Visualize the entire knowledge base using PyVis."""
     try:
         from pyvis.network import Network
+        from PhotonicsAI.KnowledgeBase.Neo4j.visualization import Neo4jVisualizer
+        
+        print(f"\n[Viz] Generating full KB visualization: {output_filename}...")
+        
+        # Check if client is Neo4j or Arango
+        if hasattr(client, 'db'):
+            # ArangoDB Logic
+            print("  Using ArangoDB visualization logic...")
+            # ... (Existing Arango Logic could go here but we just support Neo4j for this test script now)
+            # For brevity/simplicity in this specific migration, we just skip or fail if it's Arango
+            # but we know it's Neo4j.
+            pass
+        else:
+            # Neo4j Logic
+            print("  Using Neo4j visualization logic...")
+            viz = Neo4jVisualizer(client)
+            viz.visualize_graph(output_file=output_filename)
+            print(f"✓ KB Visualization saved to {output_filename}")
+            return
+
     except ImportError:
-        print("⚠ PyVis not installed. Skipping visualization.")
-        print("  Install with: pip install pyvis")
+        print("⚠ PyVis or Visualizer not found. Skipping.")
         return
+    except Exception as e:
+        print(f"⚠ Visualization failed: {e}")
 
-    print(f"\n[Viz] Generating full KB visualization: {output_filename}...")
-    net = Network(height="750px", width="100%", bgcolor="#222222", font_color="white", select_menu=True, filter_menu=True)
-    
-    # Physics options (matching arangoDB_test style)
-    net.force_atlas_2based()
-    net.show_buttons(filter_=['physics'])
-    
-    # Collection colors
-    colors = {
-        "Components": "#ff9900",
-        "Architectures": "#00ccff", 
-        "Properties": "#cc00ff",
-        "Design_Functions": "#00ff99",
-        "Physical_Principles": "#ff0066",
-        "Documents": "#aaaaaa"
-    }
-
-    # Fetch all nodes from all collections
-    node_ids = set()
-    for coll_name in colors.keys():
-        if not client.db.has_collection(coll_name):
-            continue
-        coll = client.db.collection(coll_name)
-        for doc in coll.all():
-            n_id = doc["_key"] # Using key as ID for pyvis to match edge refs if edges use keys
-            # Actually edges in Arango use _id (Collection/Key). PyVis needs unique IDs.
-            # Let's use the full Arango _id as the PyVis node ID to be safe and consistent.
-            full_id = doc["_id"]
-            
-            label = doc.get("name", doc["_key"])
-            title = f"{label}\n({coll_name})"
-            if "description" in doc:
-                title += f"\n\n{doc['description'][:200]}..."
-            
-            net.add_node(
-                full_id, 
-                label=label, 
-                title=title, 
-                color=colors[coll_name],
-                shape="dot" if coll_name != "Documents" else "box",
-                group=coll_name
-            )
-            node_ids.add(full_id)
-
-    # Fetch all edges
-    edge_collections = [
-        "PERFORMS_FUNCTION", "BASED_ON_PRINCIPLE", "HAS_PROPERTY",
-        "USES_COMPONENT", "RELATED_TO", "EXTRACTED_FROM"
-    ]
-    
-    for edge_coll_name in edge_collections:
-        if not client.db.has_collection(edge_coll_name):
-            continue
-        coll = client.db.collection(edge_coll_name)
-        for edge in coll.all():
-            src = edge["_from"]
-            dst = edge["_to"]
-            
-            # Only add edge if both nodes exist (sanity check)
-            if src in node_ids and dst in node_ids:
-                net.add_edge(
-                    src, 
-                    dst, 
-                    label=edge_coll_name, 
-                    title=edge_coll_name,
-                    arrows="to"
-                )
-
-    # Save
-    net.save_graph(output_filename)
-    print(f"✓ KB Visualization saved to {output_filename}")
 
 
 def test_dia_pipeline():

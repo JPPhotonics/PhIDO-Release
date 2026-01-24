@@ -17,8 +17,8 @@ class ArangoDBConfig:
     database: str = os.getenv("ARANGO_DATABASE", "photonics_kb")
     
     # Vector embedding model
-    embedding_model: str = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-    embedding_dimension: int = 384  # Dimension for all-MiniLM-L6-v2
+    embedding_model: str = os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B")
+    embedding_dimension: int = 1024  # Dimension for Qwen3-Embedding-0.6B
     
     # Collection names
     collections: dict = None

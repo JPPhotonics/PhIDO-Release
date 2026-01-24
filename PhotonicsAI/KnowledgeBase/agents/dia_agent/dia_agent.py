@@ -336,14 +336,21 @@ class DIAAgent:
                 # ideally we merge, but VSA already did the text merging.
                 
                 # We use internal importer/db methods or simple update
-                coll = self.kb_client.db.collection(node.collection)
+                # Replaced direct DB access with client method for Neo4j compatibility
                 existing["description"] = node.description # Update description
                 # Merge metadata/lists? For now simple overwrite of specific fields
                 for k, v in entity_data.items():
                     if v: existing[k] = v
                 
                 existing["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                coll.update(existing)
+                
+                # Check if client has update_node method (Neo4j) or use Arango style
+                if hasattr(self.kb_client, 'update_node'):
+                    self.kb_client.update_node(existing, node.collection)
+                else:
+                    # Legacy ArangoDB direct access
+                    coll = self.kb_client.db.collection(node.collection)
+                    coll.update(existing)
                 
                 # Regenerate embedding
                 self.kb_client.update_entity_embedding(existing["_key"], node.collection)
@@ -390,14 +397,24 @@ class DIAAgent:
         # kb_client.importer IS exposed.
         
         try:
-            # Use positional arguments as per signature: _create_edge(edge_type, from_key, from_collection, to_key, to_collection)
-            self.kb_client.importer._create_edge(
-                edge.edge_collection, # edge_type
-                from_key,             # from_key
-                edge.from_collection, # from_collection
-                to_key,               # to_key
-                edge.to_collection    # to_collection
-            )
+            # Check for unified create_edge method (Neo4j)
+            if hasattr(self.kb_client, 'create_edge'):
+                self.kb_client.create_edge(
+                    edge.edge_collection,
+                    from_key,
+                    edge.from_collection,
+                    to_key,
+                    edge.to_collection
+                )
+            else:
+                # Use positional arguments as per signature: _create_edge(edge_type, from_key, from_collection, to_key, to_collection)
+                self.kb_client.importer._create_edge(
+                    edge.edge_collection, # edge_type
+                    from_key,             # from_key
+                    edge.from_collection, # from_collection
+                    to_key,               # to_key
+                    edge.to_collection    # to_collection
+                )
         except Exception as e:
             # Check if it's a unique constraint violation (which is fine for MERGE)
             if "unique constraint" not in str(e).lower():

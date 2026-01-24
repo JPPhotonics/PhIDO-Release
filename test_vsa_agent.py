@@ -7,27 +7,22 @@ from pathlib import Path
 
 from PhotonicsAI.KnowledgeBase.agents.vsa_agent import VSAAgent
 from PhotonicsAI.KnowledgeBase.agents.ppc_agent.models import PPCResult, NormalizedEntity, NewConcept, KBUpdateSuggestion
-from PhotonicsAI.KnowledgeBase.ArangoDB import KnowledgeBaseClient, ArangoDBConfig
+from PhotonicsAI.KnowledgeBase.Neo4j.client import Neo4jClient as KnowledgeBaseClient
+from PhotonicsAI.KnowledgeBase.Neo4j.config import Neo4jConfig
 
 def _setup_real_agent():
-    """Setup VSA Agent with real ArangoDB connection."""
-    config = ArangoDBConfig(
-        host=os.getenv("ARANGO_HOST", "localhost"),
-        port=int(os.getenv("ARANGO_PORT", "8529")),
-        username=os.getenv("ARANGO_USERNAME", "root"),
-        password=os.getenv("ARANGO_PASSWORD", "my_secure_password"),
-        database=os.getenv("ARANGO_DATABASE", "photonics_kb")
-    )
+    """Setup VSA Agent with real Neo4j connection."""
+    config = Neo4jConfig()
     
-    print(f"Connecting to ArangoDB at {config.connection_url}...")
+    print(f"Connecting to Neo4j at {config.uri}...")
     try:
         client = KnowledgeBaseClient(config=config)
         client.connect()
-        print("✓ Connected to ArangoDB")
+        print("✓ Connected to Neo4j")
         return VSAAgent(kb_client=client, llm_model="gemini-2.5-pro")
     except Exception as e:
-        print(f"X Failed to connect to ArangoDB: {e}")
-        print("  Make sure ArangoDB is running: ./start_arangodb.sh")
+        print(f"X Failed to connect to Neo4j: {e}")
+        print("  Make sure Neo4j is running.")
         raise e
 
 def _visualize_manifest(payload, output_filename="vsa_graph.html"):

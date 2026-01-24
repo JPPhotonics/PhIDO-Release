@@ -495,3 +495,8 @@ Drive_Voltage:
   Equations:
     - Delta_phi, lambda_val, Delta_n_eff, L = symbols('Delta_phi lambda_val Delta_n_eff L')
     - phase_shift = Delta_phi - (2 * pi / lambda_val) * Delta_n_eff * L
+
+Data_Rate:
+  Source:
+  Description: Data_Rate is a crucial property and performance metric in integrated photonics systems, quantifying the speed at which information can be transmitted. The broader trend in the data communications market is towards applications requiring higher volumes and shorter reach, such as in data centers and high-performance computing, where silicon photonics commercialization efforts are often focused. High data rates are achieved using active components like modulators and in system architectures like Wavelength Division Multiplexed (WDM) transmitters. Performance improvements in Mach-Zehnder Interferometer (MZI) structures have led to experimentally demonstrated data rates up to 50 Gbit/s using traveling-wave designs. High-speed ring modulators have achieved operation up to 40 Gbit/s. WDM transmitters utilizing micro-rings have demonstrated 40 Gbits/s/channel data rates, suitable for energy-efficient high-data-rate applications, and achieved high aggregated data rates (e.g., 320 Gb/s and 160 Gb/s). Transmission experiments for WDM systems have confirmed 40 Gbits/s operation. For digital communications, the Data_Rate is related to the sensitivity of the receiver (e.g., −20 dBm for a 10 Gb/s receiver).
+  Equations:

@@ -24,17 +24,19 @@ class Normalizer:
         self.kb_tool = create_kb_grounding_tool(kb_client)
         self.acronym_agent = AcronymAgent(llm_model=llm_model)
     
-    def normalize_entities(self, raw_entities: List[RawEntity]) -> List[NormalizedEntity]:
+    def normalize_entities(self, raw_entities: List[RawEntity], descriptions: Optional[Dict[str, Dict]] = None) -> List[NormalizedEntity]:
         """
         Normalize raw entities against knowledge base using Vector Search.
         
         Args:
             raw_entities: List of raw extracted entities
+            descriptions: Optional map of entity_name -> description dict (from EntityDescriber)
             
         Returns:
             List of normalized entities with KB matches.
         """
         normalized = []
+        descriptions = descriptions or {}
         
         for entity in raw_entities:
             # Map entity type to collection name
@@ -47,9 +49,21 @@ class Normalizer:
             if query_name != entity.name:
                 print(f"    Debug: Resolved acronym '{entity.name}' -> '{query_name}'")
             
+            # Construct search query
+            # If we have a rich description, append it to the name for better semantic matching
+            query_text = query_name
+            desc_data = descriptions.get(entity.name, {})
+            description = desc_data.get("description", "")
+            
+            if description:
+                # Limit description length to avoid diluting the name too much, 
+                # though Qwen can handle long context.
+                # A simple concatenation "Name. Description" works well.
+                query_text = f"{query_name}. {description}"
+            
             # Vector Search
             try:
-                vector_results = self._vector_search(query_name, collection)
+                vector_results = self._vector_search(query_text, collection)
                 
                 if vector_results:
                     # Get best match
