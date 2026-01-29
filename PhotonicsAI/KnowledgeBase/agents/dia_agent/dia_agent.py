@@ -1,10 +1,11 @@
 """Database Integration Agent (DIA)."""
 
 import datetime
-from typing import List, Dict, Any, Optional
-from arango.database import StandardDatabase
+import json
+from typing import List, Dict, Any, Optional, Tuple
+from uuid import uuid4
 
-from PhotonicsAI.KnowledgeBase.ArangoDB.client import KnowledgeBaseClient
+from PhotonicsAI.KnowledgeBase.Neo4j.client import Neo4jClient
 from PhotonicsAI.Photon import llm_api
 from PhotonicsAI.KnowledgeBase.agents.vsa_agent.models import VSAUpdatePayload, ProposedNode, ProposedEdge
 from .models import DIAReport, SemanticVerificationResult, BatchSemanticVerificationResult
@@ -20,18 +21,18 @@ class DIAAgent:
 
     def __init__(
         self,
-        kb_client: Optional[KnowledgeBaseClient] = None,
+        kb_client: Optional[Neo4jClient] = None,
         llm_model: str = "gemini-2.5-pro"
     ):
         """
         Initialize DIA Agent.
         
         Args:
-            kb_client: KnowledgeBaseClient instance
+            kb_client: Neo4jClient instance
             llm_model: LLM model to use for verification
         """
         if kb_client is None:
-            kb_client = KnowledgeBaseClient()
+            kb_client = Neo4jClient()
             # Connect happens lazily or explicitly
             
         self.kb_client = kb_client
@@ -78,8 +79,9 @@ class DIAAgent:
         
         # 1. Global Inference (Internal Semantic Evidence Mining)
         print("DIA: Running Global Inference (Semantic Evidence Mining)...")
-        inferred_edges = self._perform_global_inference(manifest.nodes)
+        inferred_edges, queued_inference_reviews = self._perform_global_inference(manifest.nodes)
         report.inferred_edges_found = len(inferred_edges)
+        report.review_items_queued += queued_inference_reviews
         print(f"DIA: Found {len(inferred_edges)} inferred global edges.")
         
         # 2. Atomic Integration (The Commit)
@@ -94,6 +96,22 @@ class DIAAgent:
             # 2a. Nodes
             for node in manifest.nodes:
                 try:
+                    if not self._has_node_evidence(node):
+                        # Skip empty MERGE nodes without evidence
+                        if node.operation == "MERGE" and not node.description:
+                            print(f"  [Skip] No evidence for MERGE node {node.name}.")
+                            continue
+                        queued = self._queue_review_item(
+                            item_type="node",
+                            payload=node,
+                            reason="missing_evidence",
+                            source_document=manifest.document_key,
+                            priority="high"
+                        )
+                        if queued:
+                            report.review_items_queued += 1
+                        continue
+
                     self._commit_node(node, manifest.document_key)
                     if node.operation == "CREATE":
                         report.nodes_created += 1
@@ -110,6 +128,18 @@ class DIAAgent:
             all_edges = manifest.edges + inferred_edges
             for edge in all_edges:
                 try:
+                    if not self._has_edge_evidence(edge):
+                        queued = self._queue_review_item(
+                            item_type="edge",
+                            payload=edge,
+                            reason="missing_evidence",
+                            source_document=manifest.document_key,
+                            priority="high"
+                        )
+                        if queued:
+                            report.review_items_queued += 1
+                        continue
+
                     self._commit_edge(edge)
                     if edge in manifest.edges:
                         if edge.edge_collection != "EXTRACTED_FROM": # Don't count provenance edges as "created" in user summary usually, or count separately
@@ -130,12 +160,13 @@ class DIAAgent:
         print(f"DIA: Integration complete. Errors: {len(report.errors)}")
         return report
 
-    def _perform_global_inference(self, new_nodes: List[ProposedNode]) -> List[ProposedEdge]:
+    def _perform_global_inference(self, new_nodes: List[ProposedNode]) -> Tuple[List[ProposedEdge], int]:
         """
         Mine for implicit relationships between new nodes and existing KB entities.
         Uses batched LLM calls to reduce API overhead.
         """
         inferred_edges = []
+        queued_reviews = 0
         
         # Map collection names back to entity types for logic
         collection_to_type = {v: k for k, v in self.type_to_collection.items()}
@@ -186,12 +217,13 @@ class DIAAgent:
                     continue
                     
                 cand_desc = candidate.get("description", "")
+                cand_score = candidate.get("score", 0.0)
                 cand_type = collection_to_type.get(cand_collection, "Unknown")
                 
                 # Prepare evidence quotes
                 quotes = "\n".join([f"- {q}" for q in node.evidence_quotes])
                 if not quotes:
-                    quotes = "(No direct quotes, using description): " + node.description
+                    quotes = ""
 
                 task_id = f"{node.name}::{cand_name}"
                 
@@ -202,6 +234,7 @@ class DIAAgent:
                     "cand_name": cand_name,
                     "cand_type": cand_type,
                     "cand_collection": cand_collection,
+                    "cand_score": cand_score,
                     "prompt_data": {
                         "pair_id": task_id,
                         "new_entity_name": node.name,
@@ -244,53 +277,76 @@ class DIAAgent:
                 for task in chunk:
                     res = result_map.get(task["pair_id"])
                     if not res:
+                        queued = self._queue_review_item(
+                            item_type="edge",
+                            payload={
+                                "pair_id": task["pair_id"],
+                                "new_entity_name": task["node"].name,
+                                "candidate_name": task["cand_name"],
+                                "candidate_type": task["cand_type"],
+                            },
+                            reason="missing_verification_result",
+                            source_document=task["node"].source_document,
+                            priority="medium"
+                        )
+                        if queued:
+                            queued_reviews += 1
                         print(f"    [Warn] No result for {task['pair_id']}")
                         continue
                         
-                    if res.is_related and res.edge_type and res.edge_type != "None":
-                        # Create Edge
-                        node = task["node"]
-                        node_type = task["node_type"]
-                        cand_name = task["cand_name"]
-                        cand_type = task["cand_type"]
-                        cand_collection = task["cand_collection"]
+                    node = task["node"]
+                    node_type = task["node_type"]
+                    cand_name = task["cand_name"]
+                    cand_type = task["cand_type"]
+                    cand_collection = task["cand_collection"]
 
-                        # Define constraints for edge directions to ensure correct graph topology
-                        # Map: Edge Type -> (Allowed Source Types, Allowed Target Types)
-                        edge_rules = {
-                            "PERFORMS_FUNCTION": (["Component", "Architecture"], ["Design_Function"]),
-                            "BASED_ON_PRINCIPLE": (["Component", "Architecture"], ["Physical_Principle"]),
-                            "HAS_PROPERTY": (["Component", "Architecture"], ["Property"]),
-                            "USES_COMPONENT": (["Architecture"], ["Component"]),
-                            # RELATED_TO is generic, usually keep direction as found or ignore
-                        }
+                    # Define constraints for edge directions to ensure correct graph topology
+                    # Map: Edge Type -> (Allowed Source Types, Allowed Target Types)
+                    edge_rules = {
+                        "PERFORMS_FUNCTION": (["Component", "Architecture"], ["Design_Function"]),
+                        "BASED_ON_PRINCIPLE": (["Component", "Architecture"], ["Physical_Principle"]),
+                        "HAS_PROPERTY": (["Component", "Architecture"], ["Property"]),
+                        "USES_COMPONENT": (["Architecture"], ["Component"]),
+                        # RELATED_TO is generic, usually keep direction as found or ignore
+                    }
 
-                        etype = res.edge_type
-                        from_n, from_c = node.name, node.collection
-                        to_n, to_c = cand_name, cand_collection
-                        from_type = node_type
-                        to_type = cand_type
+                    etype = res.edge_type if res.edge_type and res.edge_type != "None" else None
+                    from_n, from_c = node.name, node.collection
+                    to_n, to_c = cand_name, cand_collection
+                    from_type = node_type
+                    to_type = cand_type
 
-                        # Logic to check if we need to swap
-                        if etype in edge_rules:
-                            allowed_sources, allowed_targets = edge_rules[etype]
-                            
-                            # Check if current direction matches
-                            # Current: New(from) -> Existing(to)
-                            is_direct_valid = (from_type in allowed_sources) and (to_type in allowed_targets)
-                            
-                            # Check if reverse matches
-                            # Reverse: Existing(to) -> New(from)
-                            is_reverse_valid = (to_type in allowed_sources) and (from_type in allowed_targets)
+                    is_direct_valid = False
+                    is_reverse_valid = False
+                    if etype and etype in edge_rules:
+                        allowed_sources, allowed_targets = edge_rules[etype]
 
-                            if not is_direct_valid and is_reverse_valid:
-                                # Swap!
-                                print(f"  [Debug] Swapping edge direction for {etype}: {to_n} -> {from_n}")
-                                from_n, from_c, to_n, to_c = to_n, to_c, from_n, from_c
-                            
-                            elif not is_direct_valid and not is_reverse_valid:
-                                # Neither direction fits strictly?
-                                pass
+                        # Check if current direction matches
+                        # Current: New(from) -> Existing(to)
+                        is_direct_valid = (from_type in allowed_sources) and (to_type in allowed_targets)
+
+                        # Check if reverse matches
+                        # Reverse: Existing(to) -> New(from)
+                        is_reverse_valid = (to_type in allowed_sources) and (from_type in allowed_targets)
+
+                        if not is_direct_valid and is_reverse_valid:
+                            # Swap!
+                            print(f"  [Debug] Swapping edge direction for {etype}: {to_n} -> {from_n}")
+                            from_n, from_c, to_n, to_c = to_n, to_c, from_n, from_c
+
+                    evidence_count = len(node.evidence_quotes or [])
+                    evidence_score = 1.0 if evidence_count >= 2 else 0.5 if evidence_count == 1 else 0.0
+                    similarity_score = float(task.get("cand_score", 0.0) or 0.0)
+                    llm_conf = float(getattr(res, "confidence", 0.0) or 0.0)
+
+                    if res.is_related and etype:
+                        schema_ok = 1.0 if is_direct_valid or is_reverse_valid else 0.0
+                        combined_conf = (
+                            0.45 * similarity_score +
+                            0.15 * evidence_score +
+                            0.15 * schema_ok +
+                            0.25 * llm_conf
+                        )
 
                         edge = ProposedEdge(
                             edge_collection=etype,
@@ -300,16 +356,127 @@ class DIAAgent:
                             to_collection=to_c,
                             operation="MERGE",
                             description=f"Global Inference: {res.reasoning}",
-                            weight=0.8,
+                            weight=combined_conf,
                             source_document=node.source_document
                         )
                         inferred_edges.append(edge)
-                        print(f"  [Inference] Found link: {from_n} --[{res.edge_type}]--> {to_n}")
+                        print(f"  [Inference] Found link: {from_n} --[{etype}]--> {to_n}")
+                    else:
+                        combined_conf = (
+                            0.55 * similarity_score +
+                            0.15 * evidence_score +
+                            0.30 * llm_conf
+                        )
+
+                        placeholder_etype = etype or "RELATED_TO"
+                        queue_allowed = (
+                            placeholder_etype == "RELATED_TO" or (is_direct_valid or is_reverse_valid)
+                        )
+
+                        if 0.8 <= combined_conf <= 1.0 and queue_allowed:
+                            queued_edge = ProposedEdge(
+                                edge_collection=placeholder_etype,
+                                from_node=from_n,
+                                from_collection=from_c,
+                                to_node=to_n,
+                                to_collection=to_c,
+                                operation="MERGE",
+                                description=f"Rejected by semantic verifier: {res.reasoning}",
+                                weight=combined_conf,
+                                source_document=node.source_document
+                            )
+                            queued = self._queue_review_item(
+                                item_type="edge",
+                                payload=queued_edge,
+                                reason="semantic_verification_rejected",
+                                source_document=node.source_document,
+                                priority="medium"
+                            )
+                            if queued:
+                                queued_reviews += 1
 
             except Exception as e:
                 print(f"  [Error] Batch failed: {e}")
 
-        return inferred_edges
+        return inferred_edges, queued_reviews
+
+    def _has_node_evidence(self, node: ProposedNode) -> bool:
+        """Require source_document and evidence for non-empty updates."""
+        if not node.source_document:
+            return False
+        if node.evidence_quotes:
+            return True
+        if node.metadata and node.metadata.get("context_pack"):
+            return True
+        return False
+
+    def _has_edge_evidence(self, edge: ProposedEdge) -> bool:
+        """Require source_document and rationale for edges."""
+        if edge.edge_collection == "EXTRACTED_FROM":
+            return True
+        if not edge.source_document:
+            return False
+        if not edge.description:
+            return False
+        return True
+
+    def _serialize_payload(self, payload: Any) -> Dict[str, Any]:
+        """Serialize pydantic or plain payloads for review queue."""
+        if hasattr(payload, "model_dump"):
+            return payload.model_dump()
+        if hasattr(payload, "dict"):
+            return payload.dict()
+        if isinstance(payload, dict):
+            return payload
+        return {"value": str(payload)}
+
+    def _queue_review_item(
+        self,
+        item_type: str,
+        payload: Any,
+        reason: str,
+        source_document: Optional[str] = None,
+        priority: str = "normal"
+    ) -> bool:
+        """Store a review item in Neo4j if available."""
+        if not hasattr(self.kb_client, "driver") or self.kb_client.driver is None:
+            print(f"  [ReviewQueue] Skipped (no Neo4j driver): {reason}")
+            return False
+
+        item_id = str(uuid4())
+        payload_json = json.dumps(self._serialize_payload(payload), default=str)
+        created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        props = {
+            "id": item_id,
+            "item_type": item_type,
+            "reason": reason,
+            "priority": priority,
+            "status": "pending",
+            "created_at": created_at,
+            "source_document": source_document or "",
+            "payload_json": payload_json
+        }
+
+        query = """
+        MERGE (r:ReviewItem {id: $id})
+        SET r += $props
+        """
+
+        try:
+            with self.kb_client.driver.session() as session:
+                session.run(query, id=item_id, props=props)
+                if source_document:
+                    session.run(
+                        "MATCH (r:ReviewItem {id: $id}) MATCH (d:Document {title: $title}) MERGE (r)-[:REVIEW_OF]->(d)",
+                        id=item_id,
+                        title=source_document
+                    )
+            print(f"  [ReviewQueue] Queued {item_type} ({reason})")
+            return True
+        except Exception as e:
+            print(f"  [ReviewQueue] Failed to queue item: {e}")
+            return False
 
     def _commit_node(self, node: ProposedNode, document_key: str):
         """Commit a single node to ArangoDB."""

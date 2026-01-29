@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-from PhotonicsAI.KnowledgeBase.ArangoDB import KnowledgeBaseClient
+from PhotonicsAI.KnowledgeBase.Neo4j.client import Neo4jClient
 
 from .mcp_document_annotator import MCPDocumentAnnotator
 from .llm_document_preprocessor import LLMDocumentPreprocessor
@@ -21,19 +21,19 @@ class PPCAgent:
     
     def __init__(
         self,
-        kb_client: Optional[KnowledgeBaseClient] = None,
+        kb_client: Optional[Neo4jClient] = None,
         llm_model: str = "gemini-2.5-pro"
     ):
         """
         Initialize PPC Agent.
         
         Args:
-            kb_client: KnowledgeBaseClient instance (will create if None)
+            kb_client: Neo4jClient instance (will create if None)
             llm_model: LLM model to use for extraction
         """
         # Initialize KB client
         if kb_client is None:
-            kb_client = KnowledgeBaseClient()
+            kb_client = Neo4jClient()
             kb_client.connect()
         
         self.kb_client = kb_client

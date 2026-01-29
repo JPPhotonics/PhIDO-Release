@@ -6,6 +6,7 @@ avoiding the initialization timeout issues in the MCP Python SDK.
 
 import json
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -19,7 +20,7 @@ class SubprocessMCPClient:
     
     def __init__(
         self,
-        server_command: str = "/home/tofu8/.local/bin/uvx",
+        server_command: Optional[str] = None,
         server_args: Optional[List[str]] = None,
         env: Optional[Dict[str, str]] = None
     ):
@@ -27,11 +28,28 @@ class SubprocessMCPClient:
         Initialize subprocess-based MCP client.
         
         Args:
-            server_command: Command to run MCP server
+            server_command: Command to run MCP server (defaults to 'uvx' from PATH)
             server_args: Arguments for MCP server
             env: Environment variables for server process
         """
-        self.server_command = server_command
+        # Find uvx in PATH if not provided
+        if server_command is None:
+            uvx_path = shutil.which("uvx")
+            if uvx_path:
+                self.server_command = uvx_path
+            else:
+                # Fallback to common locations
+                home = os.path.expanduser("~")
+                fallback_path = os.path.join(home, ".local", "bin", "uvx")
+                if os.path.exists(fallback_path):
+                    self.server_command = fallback_path
+                else:
+                    raise RuntimeError(
+                        "uvx not found in PATH or common locations. "
+                        "Please install uvx: pip install uv or curl -LsSf https://astral.sh/uv/install.sh | sh"
+                    )
+        else:
+            self.server_command = server_command
         self.server_args = server_args or ["--quiet", "--from", "axiomatic-mcp", "all"]
         self.env = env or {
             "AXIOMATIC_API_KEY": os.getenv(

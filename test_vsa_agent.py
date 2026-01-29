@@ -212,9 +212,9 @@ def test_vsa_with_real_ppc_output():
 
 
 if __name__ == "__main__":
-    # Check for ArangoDB password env var, set default if missing
-    if not os.getenv("ARANGO_PASSWORD"):
-        os.environ["ARANGO_PASSWORD"] = "my_secure_password"
-        print("Set ARANGO_PASSWORD to default: my_secure_password")
+    # Neo4j password hint (defaults to "password" in Neo4jConfig)
+    if not os.getenv("NEO4J_PASSWORD"):
+        print("Note: Using default NEO4J_PASSWORD='password'")
+        print("  If your Neo4j instance uses a different password, set NEO4J_PASSWORD.\n")
         
     test_vsa_with_real_ppc_output()

@@ -1,6 +1,7 @@
 """Phase C: Conflict and novelty identification."""
 
 import json
+import re
 from typing import List
 
 from PhotonicsAI.Photon import llm_api
@@ -70,7 +71,7 @@ class ConflictDetector:
             similarity = norm_entity.similarity
 
             # Logic validation flags (ontology / physics)
-            logic_flags = self._logic_validate(norm_entity, context_map)
+            logic_flags = self._logic_validate(norm_entity, context_map, key_metrics_map)
             if logic_flags:
                 # Treat as hallucination/new concept, bypassing similarity
                 new_concepts.append(NewConcept(
@@ -283,7 +284,7 @@ Return JSON in format:
         
         return text
 
-    def _logic_validate(self, norm_entity: NormalizedEntity, context_map: dict) -> List[str]:
+    def _logic_validate(self, norm_entity: NormalizedEntity, context_map: dict, key_metrics_map: dict) -> List[str]:
         """Lightweight ontology-based checks; returns list of violation flags."""
         flags = []
         constraints = self.schema.get("constraints", {})
@@ -302,6 +303,11 @@ Return JSON in format:
         if norm_entity.entity_type == "Property" and "gain" in name_lower and "passive" in ctx_lower:
             flags.append("PassiveDeviceGainConflict")
 
+        # Minimal numeric conflict check within extracted key metrics
+        key_metrics = key_metrics_map.get(norm_entity.raw_name, []) or []
+        metric_conflicts = self._detect_metric_conflicts(key_metrics)
+        flags.extend(metric_conflicts)
+
         # Disjoint class sanity: if kb_name belongs to class disjoint with a hinted context term
         disjoint_pairs = constraints.get("disjoint_pairs", [])
         for a, b in disjoint_pairs:
@@ -311,3 +317,28 @@ Return JSON in format:
                 flags.append(f"DisjointWithContext:{b}-{a}")
 
         return flags
+
+    def _detect_metric_conflicts(self, key_metrics: List[str]) -> List[str]:
+        """Detect conflicting numeric values for the same metric name."""
+        if not key_metrics:
+            return []
+
+        metric_values = {}
+        pattern = re.compile(r"(?P<metric>[A-Za-z][A-Za-z0-9_ \-\/]+?)\s*[:=]\s*(?P<value>[-+]?\d+(?:\.\d+)?)")
+
+        for metric in key_metrics:
+            if not metric:
+                continue
+            match = pattern.search(metric)
+            if not match:
+                continue
+            metric_name = " ".join(match.group("metric").lower().strip().split())
+            value = float(match.group("value"))
+            metric_values.setdefault(metric_name, set()).add(round(value, 6))
+
+        conflicts = []
+        for metric_name, values in metric_values.items():
+            if len(values) > 1:
+                conflicts.append(f"MetricConflict:{metric_name}")
+
+        return conflicts

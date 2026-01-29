@@ -16,7 +16,7 @@ class Normalizer:
         Initialize normalizer.
         
         Args:
-            kb_client: KnowledgeBaseClient instance
+            kb_client: Neo4jClient instance
             llm_model: LLM model to use (default: gemini-2.5-pro)
         """
         self.kb_client = kb_client
@@ -45,7 +45,8 @@ class Normalizer:
                 continue
             
             # Resolve acronyms if applicable (e.g. "MZI" -> "Mach-Zehnder Interferometer")
-            query_name = self.acronym_agent.resolve(entity.name, context=entity.context or "")
+            canonical_name = self._canonicalize_name(entity.name)
+            query_name = self.acronym_agent.resolve(canonical_name, context=entity.context or "")
             if query_name != entity.name:
                 print(f"    Debug: Resolved acronym '{entity.name}' -> '{query_name}'")
             
@@ -130,3 +131,12 @@ class Normalizer:
             "Physical_Principle": "Physical_Principles"
         }
         return mapping.get(entity_type)
+
+    def _canonicalize_name(self, name: str) -> str:
+        """Lightweight canonicalization for surface-form variants."""
+        if not name:
+            return name
+        # Normalize whitespace and dash variants for more stable matching.
+        normalized = " ".join(name.strip().split())
+        normalized = normalized.replace("–", "-").replace("—", "-")
+        return normalized

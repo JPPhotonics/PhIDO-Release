@@ -3,7 +3,7 @@
 import datetime
 from typing import Dict, List, Any, Optional
 
-from PhotonicsAI.KnowledgeBase.ArangoDB.client import KnowledgeBaseClient
+from PhotonicsAI.KnowledgeBase.Neo4j.client import Neo4jClient
 from PhotonicsAI.Photon import llm_api
 from PhotonicsAI.KnowledgeBase.agents.ppc_agent.models import PPCResult, NormalizedEntity, NewConcept
 
@@ -35,18 +35,18 @@ class VSAAgent:
 
     def __init__(
         self,
-        kb_client: Optional[KnowledgeBaseClient] = None,
+        kb_client: Optional[Neo4jClient] = None,
         llm_model: str = "gemini-2.5-pro"
     ):
         """
         Initialize VSA Agent.
         
         Args:
-            kb_client: KnowledgeBaseClient instance (will create if None)
+            kb_client: Neo4jClient instance (will create if None)
             llm_model: LLM model to use for validation and merging
         """
         if kb_client is None:
-            kb_client = KnowledgeBaseClient()
+            kb_client = Neo4jClient()
             # kb_client.connect() # Connect happens lazily or explicitly
             
         self.kb_client = kb_client
@@ -464,7 +464,8 @@ class VSAAgent:
                 to_node=document_key, # Assumes document key is the ID or Name
                 to_collection="Documents", # Fixed collection for papers
                 operation="MERGE",
-                description="Entity extracted from this document"
+                description="Entity extracted from this document",
+                source_document=document_key
             ))
         
         # Combine all edges

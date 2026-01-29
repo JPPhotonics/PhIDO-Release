@@ -15,6 +15,7 @@ class DIAReport(BaseModel):
     explicit_edges_created: int = Field(0, description="Count of explicit edges created from manifest")
     inferred_edges_found: int = Field(0, description="Count of implicit global edges discovered and created")
     total_edges_created: int = Field(0, description="Total edges created")
+    review_items_queued: int = Field(0, description="Count of nodes/edges queued for review")
     errors: List[str] = Field(default_factory=list, description="List of errors encountered")
     generated_at: str = Field(..., description="Timestamp of report generation")
 
@@ -24,6 +25,7 @@ class SemanticVerificationResult(BaseModel):
     is_related: bool = Field(..., description="True if a valid relationship exists")
     edge_type: str = Field("None", description="The specific edge type (e.g., PERFORMS_FUNCTION) or 'None' if unrelated")
     reasoning: str = Field(..., description="Explanation for the decision")
+    confidence: float = Field(..., description="LLM confidence score (0.0 to 1.0)")
 
 class BatchSemanticVerificationResult(BaseModel):
     """Container for batch verification results."""

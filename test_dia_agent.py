@@ -308,21 +308,12 @@ def _visualize_knowledgebase(client, output_filename="dia_knowledgebase.html"):
         
         print(f"\n[Viz] Generating full KB visualization: {output_filename}...")
         
-        # Check if client is Neo4j or Arango
-        if hasattr(client, 'db'):
-            # ArangoDB Logic
-            print("  Using ArangoDB visualization logic...")
-            # ... (Existing Arango Logic could go here but we just support Neo4j for this test script now)
-            # For brevity/simplicity in this specific migration, we just skip or fail if it's Arango
-            # but we know it's Neo4j.
-            pass
-        else:
-            # Neo4j Logic
-            print("  Using Neo4j visualization logic...")
-            viz = Neo4jVisualizer(client)
-            viz.visualize_graph(output_file=output_filename)
-            print(f"✓ KB Visualization saved to {output_filename}")
-            return
+        # Neo4j Logic
+        print("  Using Neo4j visualization logic...")
+        viz = Neo4jVisualizer(client)
+        viz.visualize_graph(output_file=output_filename)
+        print(f"✓ KB Visualization saved to {output_filename}")
+        return
 
     except ImportError:
         print("⚠ PyVis or Visualizer not found. Skipping.")

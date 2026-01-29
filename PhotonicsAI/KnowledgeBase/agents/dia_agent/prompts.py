@@ -15,9 +15,15 @@ Allowed Edge Types and Rules:
 - USES_COMPONENT: Architecture -> Component
 - RELATED_TO: Generic relationship (use sparingly, only if strong connection exists but fits no other type)
 
+Strict Evidence Rules:
+- If evidence quotes are empty or do not directly support the relation, set is_related = false.
+- Only approve when the relationship is explicitly supported by the evidence or clearly entailed by it.
+- If the relationship is plausible but not supported, reject.
+
 Instructions:
 - Be conservative. Only approve if there is clear evidence of a relationship.
 - Return a list of results, one for each pair, referencing the pair_id.
+- Include a numeric confidence score between 0.0 and 1.0 for each decision.
 """
 
 SEMANTIC_VERIFICATION_USER_TEMPLATE = """Verify relationships for the following pairs:

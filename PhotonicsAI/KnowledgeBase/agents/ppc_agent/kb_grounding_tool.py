@@ -3,18 +3,17 @@
 import json
 from typing import Optional
 
-from langchain.tools import StructuredTool
-from langchain_core.tools import tool
+from langchain_core.tools import StructuredTool, tool
 
-from PhotonicsAI.KnowledgeBase.ArangoDB import KnowledgeBaseClient
+from PhotonicsAI.KnowledgeBase.Neo4j.client import Neo4jClient
 
 
-def create_kb_grounding_tool(kb_client: KnowledgeBaseClient) -> StructuredTool:
+def create_kb_grounding_tool(kb_client: Neo4jClient) -> StructuredTool:
     """
     Create KB_Grounding_Tool as a LangChain StructuredTool.
     
     Args:
-        kb_client: KnowledgeBaseClient instance
+        kb_client: Neo4jClient instance
         
     Returns:
         LangChain StructuredTool
@@ -126,7 +125,7 @@ def kb_grounding_tool(
     entity_name: str,
     collection: str,
     threshold: float = 0.5,
-    kb_client: Optional[KnowledgeBaseClient] = None
+    kb_client: Optional[Neo4jClient] = None
 ) -> str:
     """
     Perform semantic search on a specific collection to find the closest match 
@@ -139,7 +138,7 @@ def kb_grounding_tool(
     """
     if kb_client is None:
         return json.dumps({
-            "error": "KnowledgeBaseClient not provided",
+            "error": "Neo4jClient not provided",
             "matches": []
         })
     

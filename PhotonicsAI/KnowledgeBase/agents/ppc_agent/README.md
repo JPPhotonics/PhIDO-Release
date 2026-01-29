@@ -85,10 +85,10 @@ This replaces the previous text filtering approach with AI-powered document anal
 ```python
 from pathlib import Path
 from PhotonicsAI.KnowledgeBase.agents.ppc_agent import PPCAgent
-from PhotonicsAI.KnowledgeBase.ArangoDB import KnowledgeBaseClient
+from PhotonicsAI.KnowledgeBase.Neo4j.client import Neo4jClient
 
 # Initialize KB client
-kb_client = KnowledgeBaseClient()
+kb_client = Neo4jClient()
 kb_client.connect()
 
 # Create PPC Agent

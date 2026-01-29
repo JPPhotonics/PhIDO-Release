@@ -169,15 +169,11 @@ class LLMTracer:
         with open(output_path, "w") as f:
             json.dump(report, f, indent=2, default=str)
 
-# Set ArangoDB connection environment variables if not already set
-# These should match your Docker container settings
-if not os.getenv("ARANGO_PASSWORD"):
-    # Default password from docker run command: ARANGO_ROOT_PASSWORD=my_secure_password
-    # Set this to match your Docker container's password
-    os.environ["ARANGO_PASSWORD"] = "my_secure_password"
-    print("Note: Using default ARANGO_PASSWORD='my_secure_password'")
-    print("  If your Docker container uses a different password, set ARANGO_PASSWORD environment variable")
-    print("  Example: export ARANGO_PASSWORD=your_password\n")
+# Neo4j connection hints
+if not os.getenv("NEO4J_PASSWORD"):
+    print("Note: Using default NEO4J_PASSWORD='password'")
+    print("  If your Neo4j instance uses a different password, set NEO4J_PASSWORD.")
+    print("  Example: export NEO4J_PASSWORD=your_password\n")
 
 
 def test_text_filter():
@@ -288,13 +284,14 @@ def test_kb_grounding_tool():
     except Exception as e:
         error_msg = str(e)
         if "Connection refused" in error_msg or "Can't connect" in error_msg:
-            print(f"⚠ Connection Error: ArangoDB is not accessible")
-            print("  To start ArangoDB: ./start_arangodb.sh")
-            print("  Or: sudo docker start arangodb")
-            print("  Check status: sudo docker ps | grep arangodb\n")
+            print("⚠ Connection Error: Neo4j is not accessible")
+            print("  To start Neo4j:")
+            print("  sudo docker run -d --name neo4j-phido -p 7474:7474 -p 7687:7687 "
+                  "-e NEO4J_AUTH=neo4j/password -e NEO4J_PLUGINS='[\"apoc\", \"graph-data-science\"]' "
+                  "-e NEO4J_dbms_security_procedures_unrestricted=apoc.*,gds.* neo4j:5.15-enterprise\n")
         else:
             print(f"⚠ Error: {error_msg}")
-            print("  Make sure ArangoDB is running and KB is initialized\n")
+            print("  Make sure Neo4j is running and KB is initialized\n")
 
 
 def test_entity_extraction():
@@ -448,17 +445,21 @@ def test_full_pipeline_text():
         print("\n✓ Full pipeline test passed\n")
     
     except ConnectionError as e:
-        print(f"⚠ Connection Error: ArangoDB is not running")
-        print("  Skipping full pipeline test (requires ArangoDB)")
-        print("  To start ArangoDB: ./start_arangodb.sh")
-        print("  Or: sudo docker start arangodb\n")
+        print("⚠ Connection Error: Neo4j is not running")
+        print("  Skipping full pipeline test (requires Neo4j)")
+        print("  To start Neo4j:")
+        print("  sudo docker run -d --name neo4j-phido -p 7474:7474 -p 7687:7687 "
+              "-e NEO4J_AUTH=neo4j/password -e NEO4J_PLUGINS='[\"apoc\", \"graph-data-science\"]' "
+              "-e NEO4J_dbms_security_procedures_unrestricted=apoc.*,gds.* neo4j:5.15-enterprise\n")
     except Exception as e:
         error_msg = str(e)
         if "Connection refused" in error_msg or "Can't connect" in error_msg:
-            print(f"⚠ Connection Error: ArangoDB is not accessible")
-            print("  Skipping full pipeline test (requires ArangoDB)")
-            print("  To start ArangoDB: ./start_arangodb.sh")
-            print("  Or: sudo docker start arangodb\n")
+            print("⚠ Connection Error: Neo4j is not accessible")
+            print("  Skipping full pipeline test (requires Neo4j)")
+            print("  To start Neo4j:")
+            print("  sudo docker run -d --name neo4j-phido -p 7474:7474 -p 7687:7687 "
+                  "-e NEO4J_AUTH=neo4j/password -e NEO4J_PLUGINS='[\"apoc\", \"graph-data-science\"]' "
+                  "-e NEO4J_dbms_security_procedures_unrestricted=apoc.*,gds.* neo4j:5.15-enterprise\n")
         else:
             print(f"Error: {e}")
             import traceback
@@ -550,17 +551,21 @@ def test_full_pipeline_pdf():
         print("\n✓ Full PDF pipeline test passed\n")
     
     except ConnectionError as e:
-        print(f"⚠ Connection Error: ArangoDB is not running")
-        print("  Skipping full pipeline test (requires ArangoDB)")
-        print("  To start ArangoDB: ./start_arangodb.sh")
-        print("  Or: sudo docker start arangodb\n")
+        print("⚠ Connection Error: Neo4j is not running")
+        print("  Skipping full pipeline test (requires Neo4j)")
+        print("  To start Neo4j:")
+        print("  sudo docker run -d --name neo4j-phido -p 7474:7474 -p 7687:7687 "
+              "-e NEO4J_AUTH=neo4j/password -e NEO4J_PLUGINS='[\"apoc\", \"graph-data-science\"]' "
+              "-e NEO4J_dbms_security_procedures_unrestricted=apoc.*,gds.* neo4j:5.15-enterprise\n")
     except Exception as e:
         error_msg = str(e)
         if "Connection refused" in error_msg or "Can't connect" in error_msg:
-            print(f"⚠ Connection Error: ArangoDB is not accessible")
-            print("  Skipping full pipeline test (requires ArangoDB)")
-            print("  To start ArangoDB: ./start_arangodb.sh")
-            print("  Or: sudo docker start arangodb\n")
+            print("⚠ Connection Error: Neo4j is not accessible")
+            print("  Skipping full pipeline test (requires Neo4j)")
+            print("  To start Neo4j:")
+            print("  sudo docker run -d --name neo4j-phido -p 7474:7474 -p 7687:7687 "
+                  "-e NEO4J_AUTH=neo4j/password -e NEO4J_PLUGINS='[\"apoc\", \"graph-data-science\"]' "
+                  "-e NEO4J_dbms_security_procedures_unrestricted=apoc.*,gds.* neo4j:5.15-enterprise\n")
         else:
             print(f"Error: {e}")
             import traceback
