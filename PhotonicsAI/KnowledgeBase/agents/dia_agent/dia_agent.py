@@ -56,6 +56,14 @@ class DIAAgent:
             "Design_Function": "Design_Functions",
             "Physical_Principle": "Physical_Principles"
         }
+        self.label_to_collection = {
+            "Component": "Components",
+            "Architecture": "Architectures",
+            "Property": "Properties",
+            "Design_Function": "Design_Functions",
+            "Physical_Principle": "Physical_Principles",
+            "Document": "Documents",
+        }
 
     def integrate_manifest(self, manifest: VSAUpdatePayload) -> DIAReport:
         """
@@ -167,6 +175,7 @@ class DIAAgent:
         """
         inferred_edges = []
         queued_reviews = 0
+        extracted_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
         
         # Map collection names back to entity types for logic
         collection_to_type = {v: k for k, v in self.type_to_collection.items()}
@@ -204,6 +213,26 @@ class DIAAgent:
                     candidates.extend([(r, target_coll) for r in results])
                 except Exception as e:
                     print(f"  [Warn] Search failed for {target_coll}: {e}")
+
+            # Phase 1: Neighbor expansion from semantic seeds
+            seed_nodes = []
+            for cand, cand_collection in candidates[:10]:
+                if cand.get("name"):
+                    seed_nodes.append({
+                        "name": cand.get("name"),
+                        "collection": cand_collection,
+                    })
+            neighbor_candidates = self._expand_neighbors(seed_nodes, max_hops=2, limit=50)
+
+            # Phase 2: Personalized PageRank expansion (if GDS available)
+            ppr_candidates = self._ppr_candidates(seed_nodes, limit=50)
+
+            # Merge candidates and filter to target collections
+            extra_candidates = neighbor_candidates + ppr_candidates
+            for cand in extra_candidates:
+                cand_collection = cand.get("collection")
+                if cand_collection in target_collections:
+                    candidates.append((cand, cand_collection))
             
             # Limit candidates per node
             # candidates = candidates[:3] 
@@ -250,7 +279,7 @@ class DIAAgent:
         print(f"DIA: Found {len(verification_tasks)} candidate pairs. Processing in batches...")
 
         # 2. Process in Batches
-        BATCH_SIZE = 5 # conservative batch size
+        BATCH_SIZE = 10 # conservative batch size
         
         # Chunk tasks
         chunks = [verification_tasks[i:i + BATCH_SIZE] for i in range(0, len(verification_tasks), BATCH_SIZE)]
@@ -356,8 +385,12 @@ class DIAAgent:
                             to_collection=to_c,
                             operation="MERGE",
                             description=f"Global Inference: {res.reasoning}",
+                            evidence_quotes=list(node.evidence_quotes or []),
                             weight=combined_conf,
-                            source_document=node.source_document
+                            confidence=combined_conf,
+                            source_document=node.source_document,
+                            provenance="DIA",
+                            extracted_at=extracted_at
                         )
                         inferred_edges.append(edge)
                         print(f"  [Inference] Found link: {from_n} --[{etype}]--> {to_n}")
@@ -382,8 +415,12 @@ class DIAAgent:
                                 to_collection=to_c,
                                 operation="MERGE",
                                 description=f"Rejected by semantic verifier: {res.reasoning}",
+                                evidence_quotes=list(node.evidence_quotes or []),
                                 weight=combined_conf,
-                                source_document=node.source_document
+                                confidence=combined_conf,
+                                source_document=node.source_document,
+                                provenance="DIA",
+                                extracted_at=extracted_at
                             )
                             queued = self._queue_review_item(
                                 item_type="edge",
@@ -399,6 +436,139 @@ class DIAAgent:
                 print(f"  [Error] Batch failed: {e}")
 
         return inferred_edges, queued_reviews
+
+    def _expand_neighbors(
+        self,
+        seed_nodes: List[Dict[str, str]],
+        max_hops: int = 2,
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """Expand neighbors from seed nodes using Cypher."""
+        if not seed_nodes:
+            return []
+        if not hasattr(self.kb_client, "driver") or self.kb_client.driver is None:
+            return []
+
+        seed_names = [s["name"] for s in seed_nodes if s.get("name")]
+        if not seed_names:
+            return []
+
+        query = f"""
+        MATCH (seed)
+        WHERE seed.name IN $seed_names
+        MATCH (seed)-[*1..{max_hops}]-(n)
+        RETURN DISTINCT n, labels(n) AS labels
+        LIMIT $limit
+        """
+        results = []
+        try:
+            with self.kb_client.driver.session() as session:
+                records = session.run(query, seed_names=seed_names, limit=limit)
+                for record in records:
+                    node = record["n"]
+                    labels = record["labels"] or []
+                    label = labels[0] if labels else None
+                    if not label:
+                        continue
+                    collection = self.label_to_collection.get(label)
+                    if not collection:
+                        continue
+                    results.append({
+                        "name": node.get("name"),
+                        "description": node.get("description", ""),
+                        "score": 0.0,
+                        "collection": collection,
+                    })
+        except Exception as e:
+            print(f"  [Warn] Neighbor expansion failed: {e}")
+        return results
+
+    def _ppr_candidates(
+        self,
+        seed_nodes: List[Dict[str, str]],
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """Run Personalized PageRank on a local subgraph if GDS is available."""
+        if not seed_nodes:
+            return []
+        if not hasattr(self.kb_client, "driver") or self.kb_client.driver is None:
+            return []
+
+        seed_names = [s["name"] for s in seed_nodes if s.get("name")]
+        if not seed_names:
+            return []
+
+        graph_name = f"ppr_temp_{datetime.datetime.now().timestamp()}"
+        results = []
+        try:
+            with self._gds_session() as session:
+                # Project subgraph around seeds (2-hop neighborhood)
+                session.run(
+                    """
+                    CALL gds.graph.project.cypher(
+                      $graphName,
+                      'MATCH (seed) WHERE seed.name IN $seed_names
+                       MATCH (seed)-[*1..2]-(n)
+                       RETURN DISTINCT id(n) AS id',
+                      'MATCH (seed) WHERE seed.name IN $seed_names
+                       MATCH (seed)-[*1..2]-(n)-[r]-(m)
+                       WHERE id(n) IS NOT NULL AND id(m) IS NOT NULL
+                       RETURN DISTINCT id(n) AS source, id(m) AS target',
+                      {parameters: {seed_names: $seed_names}, validateRelationships: false}
+                    )
+                    """,
+                    graphName=graph_name,
+                    seed_names=seed_names,
+                )
+
+                # Run personalized PageRank seeded on initial nodes
+                records = session.run(
+                    """
+                    CALL gds.pageRank.stream($graphName, {maxIterations: 20, dampingFactor: 0.85})
+                    YIELD nodeId, score
+                    RETURN gds.util.asNode(nodeId) AS node, score
+                    ORDER BY score DESC
+                    LIMIT $limit
+                    """,
+                    graphName=graph_name,
+                    limit=limit,
+                )
+
+                for record in records:
+                    node = record["node"]
+                    labels = list(node.labels) if hasattr(node, "labels") else []
+                    label = labels[0] if labels else None
+                    if not label:
+                        continue
+                    collection = self.label_to_collection.get(label)
+                    if not collection:
+                        continue
+                    results.append({
+                        "name": node.get("name"),
+                        "description": node.get("description", ""),
+                        "score": record["score"],
+                        "collection": collection,
+                    })
+        except Exception as e:
+            print(f"  [Warn] PPR failed or GDS unavailable: {e}")
+        finally:
+            try:
+                with self._gds_session() as session:
+                    session.run("CALL gds.graph.drop($graphName)", graphName=graph_name)
+            except Exception:
+                pass
+
+        return results
+
+    def _gds_session(self):
+        """Open a Neo4j session with deprecation notifications disabled."""
+        try:
+            return self.kb_client.driver.session(
+                notifications_disabled_categories=["DEPRECATION"]
+            )
+        except TypeError:
+            # Fallback for older driver versions
+            return self.kb_client.driver.session()
 
     def _has_node_evidence(self, node: ProposedNode) -> bool:
         """Require source_document and evidence for non-empty updates."""
@@ -416,9 +586,11 @@ class DIAAgent:
             return True
         if not edge.source_document:
             return False
-        if not edge.description:
-            return False
-        return True
+        if edge.description:
+            return True
+        if edge.evidence_quotes:
+            return True
+        return False
 
     def _serialize_payload(self, payload: Any) -> Dict[str, Any]:
         """Serialize pydantic or plain payloads for review queue."""
@@ -564,6 +736,21 @@ class DIAAgent:
         # kb_client.importer IS exposed.
         
         try:
+            edge_props = {
+                "description": edge.description,
+                "evidence_quotes": edge.evidence_quotes,
+                "weight": edge.weight,
+                "confidence": edge.confidence,
+                "source_document": edge.source_document,
+                "provenance": edge.provenance,
+                "extracted_at": edge.extracted_at,
+            }
+            edge_props = {
+                key: value
+                for key, value in edge_props.items()
+                if value not in (None, "", [])
+            }
+
             # Check for unified create_edge method (Neo4j)
             if hasattr(self.kb_client, 'create_edge'):
                 self.kb_client.create_edge(
@@ -571,7 +758,8 @@ class DIAAgent:
                     from_key,
                     edge.from_collection,
                     to_key,
-                    edge.to_collection
+                    edge.to_collection,
+                    props=edge_props
                 )
             else:
                 # Use positional arguments as per signature: _create_edge(edge_type, from_key, from_collection, to_key, to_collection)

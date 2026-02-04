@@ -8,6 +8,11 @@ from typing import Any, Dict, List, Optional
 
 import streamlit as st
 
+try:
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
+except Exception:  # pragma: no cover - fallback for older streamlit
+    get_script_run_ctx = None
+
 from PhotonicsAI.KnowledgeBase.Neo4j.client import Neo4jClient
 from PhotonicsAI.KnowledgeBase.Neo4j.config import Neo4jConfig
 from PhotonicsAI.KnowledgeBase.agents.dia_agent import DIAAgent
@@ -91,6 +96,10 @@ def _commit_edge(agent: DIAAgent, payload: Dict[str, Any]) -> None:
 
 
 def main() -> None:
+    if get_script_run_ctx is not None and get_script_run_ctx() is None:
+        print("This app must be run with: streamlit run review_queue_app.py")
+        return
+
     st.set_page_config(page_title="KG Review Queue", layout="wide")
     st.title("Knowledge Graph Review Queue")
 
@@ -127,6 +136,39 @@ def main() -> None:
                 st.write(f"**Source document:** {source_doc}")
 
             st.json(payload)
+
+            edge_description = None
+            edge_evidence = None
+            edge_confidence = None
+            edge_provenance = None
+            if item_type == "edge" and _is_edge_payload(payload):
+                edge_description = st.text_area(
+                    "Edge description",
+                    value=payload.get("description", "") or "",
+                    key=f"edge_desc_{item_id}",
+                )
+                evidence_text = st.text_area(
+                    "Evidence quotes (one per line)",
+                    value="\n".join(payload.get("evidence_quotes", []) or []),
+                    key=f"edge_evidence_{item_id}",
+                )
+                edge_evidence = [line.strip() for line in evidence_text.splitlines() if line.strip()]
+                default_conf = payload.get("confidence")
+                if default_conf is None:
+                    default_conf = payload.get("weight", 0.0) or 0.0
+                edge_confidence = st.number_input(
+                    "Confidence (0.0 - 1.0)",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=float(default_conf),
+                    step=0.01,
+                    key=f"edge_conf_{item_id}",
+                )
+                edge_provenance = st.text_input(
+                    "Provenance",
+                    value=payload.get("provenance", "") or "",
+                    key=f"edge_prov_{item_id}",
+                )
 
             notes = st.text_area(
                 "Review notes",
@@ -168,6 +210,15 @@ def main() -> None:
                             commit_payload = dict(payload)
                             if selected_edge_type:
                                 commit_payload["edge_collection"] = selected_edge_type
+                            if edge_description is not None:
+                                commit_payload["description"] = edge_description
+                            if edge_evidence is not None:
+                                commit_payload["evidence_quotes"] = edge_evidence
+                            if edge_confidence is not None:
+                                commit_payload["confidence"] = edge_confidence
+                                commit_payload["weight"] = edge_confidence
+                            if edge_provenance is not None:
+                                commit_payload["provenance"] = edge_provenance
                             _commit_edge(agent, commit_payload)
                         _update_review_status(
                             client,

@@ -245,20 +245,37 @@ class Neo4jImporter:
         except Exception:
             return None
 
-    def create_edge_by_id(self, edge_type: str, from_id: str, from_coll: str, to_id: str, to_coll: str) -> bool:
+    def create_edge_by_id(
+        self,
+        edge_type: str,
+        from_id: str,
+        from_coll: str,
+        to_id: str,
+        to_coll: str,
+        props: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         """Create an edge between two nodes using their element IDs."""
-        query = f"""
-        MATCH (a) WHERE elementId(a) = $from_id
-        MATCH (b) WHERE elementId(b) = $to_id
-        MERGE (a)-[r:{edge_type}]->(b)
-        RETURN type(r)
-        """
+        if props:
+            query = f"""
+            MATCH (a) WHERE elementId(a) = $from_id
+            MATCH (b) WHERE elementId(b) = $to_id
+            MERGE (a)-[r:{edge_type}]->(b)
+            SET r += $props
+            RETURN type(r)
+            """
+        else:
+            query = f"""
+            MATCH (a) WHERE elementId(a) = $from_id
+            MATCH (b) WHERE elementId(b) = $to_id
+            MERGE (a)-[r:{edge_type}]->(b)
+            RETURN type(r)
+            """
         # Note: We ignore collections here as IDs are unique globally in Neo4j (mostly), 
         # but we could verify labels if needed.
         
         try:
             with self.driver.session() as session:
-                result = session.run(query, from_id=from_id, to_id=to_id)
+                result = session.run(query, from_id=from_id, to_id=to_id, props=props or {})
                 record = result.single()
                 if record:
                     print(f"  Created edge {edge_type}: {from_id} -> {to_id}")

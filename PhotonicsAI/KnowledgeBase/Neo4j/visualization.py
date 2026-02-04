@@ -113,10 +113,13 @@ class Neo4jVisualizer:
                     net.add_node(m_viz_id, label=m.get('name'), color=colors.get(m_label, "#999999"), group=m_label, shape="dot")
 
                 # Add edge
+                edge_title = r.type
+                if r.get("description"):
+                    edge_title += f"\n{r.get('description')}"
                 net.add_edge(
                     n_viz_id, 
                     m_viz_id, 
-                    title=r.type, 
+                    title=edge_title, 
                     label=r.type,
                     arrows="to"
                 )

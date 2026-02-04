@@ -342,10 +342,25 @@ class Neo4jClient:
                 """
                 session.run(query_update, key=entity_key, embedding=embedding)
 
-    def create_edge(self, edge_type: str, from_key: str, from_collection: str, to_key: str, to_collection: str) -> bool:
+    def create_edge(
+        self,
+        edge_type: str,
+        from_key: str,
+        from_collection: str,
+        to_key: str,
+        to_collection: str,
+        props: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         """Create an edge between two nodes identified by their keys (Element IDs)."""
         if not self._connected:
             self.connect()
-        return self.importer.create_edge_by_id(edge_type, from_key, from_collection, to_key, to_collection)
+        return self.importer.create_edge_by_id(
+            edge_type,
+            from_key,
+            from_collection,
+            to_key,
+            to_collection,
+            props=props,
+        )
 
 

@@ -108,13 +108,19 @@ class VSAAgent:
         # Generate explicit edges (USES_COMPONENT) and inferred edges
         print("VSA: Synthesizing edges...")
         
+        extracted_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
         # 2a. Explicit edges (from structure)
-        explicit_edges = self._phase_2_relational_synthesis(known, valid_new_concepts, document_key)
+        explicit_edges = self._phase_2_relational_synthesis(
+            known, valid_new_concepts, document_key, extracted_at
+        )
         final_edges.extend(explicit_edges)
         
         # 2b. Deep Inference (Implicit edges from context)
         print("VSA: Running Deep Inference for implicit edges...")
-        inferred_edges = self._infer_local_edges(known, valid_new_concepts, document_key)
+        inferred_edges = self._infer_local_edges(
+            known, valid_new_concepts, document_key, extracted_at
+        )
         final_edges.extend(inferred_edges)
         print(f"  [Inference] Proposed {len(inferred_edges)} implicit relationships.")
 
@@ -183,10 +189,11 @@ class VSAAgent:
             return True, "LLM check failed; passed based on presence of fields."
 
     def _phase_2_relational_synthesis(
-        self, 
-        known: List[NormalizedEntity], 
+        self,
+        known: List[NormalizedEntity],
         new_concepts: List[NewConcept],
-        document_key: str
+        document_key: str,
+        extracted_at: str,
     ) -> List[ProposedEdge]:
         """
         Propose edges based on entity types and evidence.
@@ -235,16 +242,20 @@ class VSAAgent:
                         to_collection="Components", # Assumption
                         operation="MERGE", # If exists, don't dupe
                         description="Extracted from architecture components list",
-                        source_document=document_key
+                        evidence_quotes=[],
+                        source_document=document_key,
+                        provenance="VSA",
+                        extracted_at=extracted_at
                     ))
 
         return edges
 
     def _infer_local_edges(
-        self, 
-        known: List[NormalizedEntity], 
-        new_concepts: List[NewConcept], 
-        document_key: str
+        self,
+        known: List[NormalizedEntity],
+        new_concepts: List[NewConcept],
+        document_key: str,
+        extracted_at: str,
     ) -> List[ProposedEdge]:
         """
         Deep Inference module: Uses LLM to infer implicit relationships from paper context.
@@ -271,7 +282,8 @@ class VSAAgent:
 
         # Step B: LLM Call
         entities_list_str = "\n".join([f"- {name} ({etype})" for name, etype in entity_registry.items()])
-        quotes_str = "\n".join([f"\"{q}\"" for q in list(evidence_quotes)[:20]]) # Limit to 20 quotes to fit context
+        quote_list = list(evidence_quotes)[:20]
+        quotes_str = "\n".join([f"\"{q}\"" for q in quote_list]) # Limit to 20 quotes to fit context
         
         prompt = DEEP_INFERENCE_USER_TEMPLATE.format(
             entities_list=entities_list_str,
@@ -349,8 +361,12 @@ class VSAAgent:
                 to_collection=tgt_coll,
                 operation="MERGE", # Safest default
                 description=f"{edge.inference_reasoning} (Confidence: {edge.confidence_score})",
+                evidence_quotes=quote_list,
                 weight=edge.confidence_score,
-                source_document=document_key
+                confidence=edge.confidence_score,
+                source_document=document_key,
+                provenance="VSA",
+                extracted_at=extracted_at
             ))
             
         return proposed_edges

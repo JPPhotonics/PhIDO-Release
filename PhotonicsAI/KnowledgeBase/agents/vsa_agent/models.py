@@ -38,8 +38,12 @@ class ProposedEdge(BaseModel):
     
     # Context
     description: Optional[str] = Field(None, description="Context for why this relationship exists")
+    evidence_quotes: List[str] = Field(default_factory=list, description="Quotes supporting the edge")
     weight: float = Field(1.0, description="Confidence or relevance weight")
+    confidence: Optional[float] = Field(None, description="Confidence score (0.0 to 1.0)")
     source_document: Optional[str] = Field(None, description="Document key/ID supporting this edge")
+    provenance: Optional[str] = Field(None, description="Originating agent or tool")
+    extracted_at: Optional[str] = Field(None, description="Timestamp when edge was extracted")
 
 
 class VSAUpdatePayload(BaseModel):
