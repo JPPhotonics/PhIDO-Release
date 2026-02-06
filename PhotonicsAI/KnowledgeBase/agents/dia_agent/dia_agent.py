@@ -176,6 +176,27 @@ class DIAAgent:
         inferred_edges = []
         queued_reviews = 0
         extracted_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        # Candidate selection controls (precision/cost knobs)
+        # - semantic search is relevance-scored retrieval
+        # - neighbor expansion is high-recall but noisy unless constrained
+        # - PageRank on a local projection tends to surface hubs, so keep it tightly budgeted
+        SEMANTIC_THRESHOLD = 0.50
+        SEMANTIC_LIMIT_PER_COLLECTION = 5
+        SEED_LIMIT = 5
+        SKIP_EXPANSION_IF_SEMANTIC_AT_LEAST = 12
+        NEIGHBOR_HOPS = 2
+        NEIGHBOR_LIMIT = 20
+        PPR_LIMIT = 20
+        MAX_CANDIDATES_PER_NODE = 25
+        MIN_DESC_CHARS = 40
+        CORE_REL_TYPES = [
+            "PERFORMS_FUNCTION",
+            "BASED_ON_PRINCIPLE",
+            "HAS_PROPERTY",
+            "USES_COMPONENT",
+            "RELATED_TO",
+        ]
         
         # Map collection names back to entity types for logic
         collection_to_type = {v: k for k, v in self.type_to_collection.items()}
@@ -201,45 +222,94 @@ class DIAAgent:
             if not target_collections:
                 continue
 
-            # Candidate Search
-            candidates = []
+            # Candidate Search (semantic seeds)
+            semantic_pairs: List[Tuple[Dict[str, Any], str]] = []
             for target_coll in target_collections:
                 try:
                     results = self.kb_client.semantic_search(
                         query_text=node.description,
                         collection=target_coll,
-                        threshold=0.4 # High threshold for relevance
+                        limit=SEMANTIC_LIMIT_PER_COLLECTION,
+                        threshold=SEMANTIC_THRESHOLD
                     )
-                    candidates.extend([(r, target_coll) for r in results])
+                    semantic_pairs.extend([(r, target_coll) for r in results])
                 except Exception as e:
                     print(f"  [Warn] Search failed for {target_coll}: {e}")
 
-            # Phase 1: Neighbor expansion from semantic seeds
-            seed_nodes = []
-            for cand, cand_collection in candidates[:10]:
-                if cand.get("name"):
-                    seed_nodes.append({
-                        "name": cand.get("name"),
-                        "collection": cand_collection,
-                    })
-            neighbor_candidates = self._expand_neighbors(seed_nodes, max_hops=2, limit=50)
+            # De-dupe semantic candidates (keep best score per (name, collection))
+            semantic_best: Dict[Tuple[str, str], Dict[str, Any]] = {}
+            for cand, cand_collection in semantic_pairs:
+                cand_name = (cand or {}).get("name")
+                if not cand_name:
+                    continue
+                key = (cand_name, cand_collection)
+                cand_score = float((cand or {}).get("score", 0.0) or 0.0)
+                prev = semantic_best.get(key)
+                if prev is None or cand_score > float(prev.get("score", 0.0) or 0.0):
+                    c = dict(cand)
+                    c["collection"] = cand_collection
+                    c["score"] = cand_score
+                    semantic_best[key] = c
 
-            # Phase 2: Personalized PageRank expansion (if GDS available)
-            ppr_candidates = self._ppr_candidates(seed_nodes, limit=50)
+            semantic_candidates = sorted(
+                semantic_best.values(),
+                key=lambda x: float(x.get("score", 0.0) or 0.0),
+                reverse=True
+            )
 
-            # Merge candidates and filter to target collections
-            extra_candidates = neighbor_candidates + ppr_candidates
-            for cand in extra_candidates:
-                cand_collection = cand.get("collection")
-                if cand_collection in target_collections:
-                    candidates.append((cand, cand_collection))
-            
-            # Limit candidates per node
-            # candidates = candidates[:3] 
+            # Seed selection (semantic only)
+            seed_nodes = [
+                {"name": c.get("name"), "collection": c.get("collection")}
+                for c in semantic_candidates[:SEED_LIMIT]
+                if c.get("name") and c.get("collection")
+            ]
+
+            # Expansion (only when semantic retrieval is sparse)
+            neighbor_candidates: List[Dict[str, Any]] = []
+            ppr_candidates: List[Dict[str, Any]] = []
+            if len(semantic_candidates) < SKIP_EXPANSION_IF_SEMANTIC_AT_LEAST:
+                neighbor_candidates = self._expand_neighbors(
+                    seed_nodes,
+                    max_hops=NEIGHBOR_HOPS,
+                    limit=NEIGHBOR_LIMIT,
+                    rel_types=CORE_REL_TYPES,
+                )
+                ppr_candidates = self._ppr_candidates(
+                    seed_nodes,
+                    limit=PPR_LIMIT,
+                    rel_types=CORE_REL_TYPES,
+                )
+
+            # Merge + filter to target collections + de-dupe (keep best score)
+            merged: Dict[Tuple[str, str], Dict[str, Any]] = {}
+            for cand in (semantic_candidates + neighbor_candidates + ppr_candidates):
+                cand_name = (cand or {}).get("name")
+                cand_collection = (cand or {}).get("collection")
+                if not cand_name or not cand_collection:
+                    continue
+                if cand_collection not in target_collections:
+                    continue
+                cand_desc = (cand or {}).get("description", "") or ""
+                if len(cand_desc) < MIN_DESC_CHARS:
+                    continue
+                key = (cand_name, cand_collection)
+                cand_score = float((cand or {}).get("score", 0.0) or 0.0)
+                prev = merged.get(key)
+                if prev is None or cand_score > float(prev.get("score", 0.0) or 0.0):
+                    merged[key] = dict(cand)
+
+            final_candidates = sorted(
+                merged.values(),
+                key=lambda x: float(x.get("score", 0.0) or 0.0),
+                reverse=True
+            )[:MAX_CANDIDATES_PER_NODE]
             
             # Create tasks
-            for candidate, cand_collection in candidates:
+            for candidate in final_candidates:
                 cand_name = candidate.get("name")
+                cand_collection = candidate.get("collection")
+                if not cand_collection:
+                    continue
                 
                 # Skip self-match
                 if cand_name == node.name:
@@ -441,7 +511,8 @@ class DIAAgent:
         self,
         seed_nodes: List[Dict[str, str]],
         max_hops: int = 2,
-        limit: int = 50
+        limit: int = 50,
+        rel_types: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """Expand neighbors from seed nodes using Cypher."""
         if not seed_nodes:
@@ -453,11 +524,22 @@ class DIAAgent:
         if not seed_names:
             return []
 
+        rel_types = rel_types or [
+            "PERFORMS_FUNCTION",
+            "BASED_ON_PRINCIPLE",
+            "HAS_PROPERTY",
+            "USES_COMPONENT",
+            "RELATED_TO",
+        ]
+        rel_union = "|".join(rel_types)
+
         query = f"""
         MATCH (seed)
         WHERE seed.name IN $seed_names
-        MATCH (seed)-[*1..{max_hops}]-(n)
-        RETURN DISTINCT n, labels(n) AS labels
+        MATCH p = (seed)-[:{rel_union}*1..{max_hops}]-(n)
+        WITH n, labels(n) AS labels, min(length(p)) AS hops
+        RETURN DISTINCT n, labels, hops
+        ORDER BY hops ASC
         LIMIT $limit
         """
         results = []
@@ -473,11 +555,16 @@ class DIAAgent:
                     collection = self.label_to_collection.get(label)
                     if not collection:
                         continue
+                    hops = int(record["hops"] or 0)
+                    # Simple hop-based score for ordering/capping.
+                    # This is NOT semantic relevance; it just avoids "all zero" scores.
+                    hop_score = max(0.05, 0.35 - 0.10 * max(hops - 1, 0))
                     results.append({
                         "name": node.get("name"),
                         "description": node.get("description", ""),
-                        "score": 0.0,
+                        "score": float(hop_score),
                         "collection": collection,
+                        "hops": hops,
                     })
         except Exception as e:
             print(f"  [Warn] Neighbor expansion failed: {e}")
@@ -486,9 +573,14 @@ class DIAAgent:
     def _ppr_candidates(
         self,
         seed_nodes: List[Dict[str, str]],
-        limit: int = 50
+        limit: int = 50,
+        rel_types: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
-        """Run Personalized PageRank on a local subgraph if GDS is available."""
+        """
+        Run PageRank on a local subgraph if GDS is available.
+        Uses seed-biased PageRank (personalized PageRank) when supported by the installed GDS version.
+        We keep it budgeted and constrain relationship types to reduce noise.
+        """
         if not seed_nodes:
             return []
         if not hasattr(self.kb_client, "driver") or self.kb_client.driver is None:
@@ -498,41 +590,90 @@ class DIAAgent:
         if not seed_names:
             return []
 
+        rel_types = rel_types or [
+            "PERFORMS_FUNCTION",
+            "BASED_ON_PRINCIPLE",
+            "HAS_PROPERTY",
+            "USES_COMPONENT",
+            "RELATED_TO",
+        ]
+        rel_union = "|".join(rel_types)
+
         graph_name = f"ppr_temp_{datetime.datetime.now().timestamp()}"
         results = []
         try:
             with self._gds_session() as session:
                 # Project subgraph around seeds (2-hop neighborhood)
                 session.run(
-                    """
+                    f"""
                     CALL gds.graph.project.cypher(
                       $graphName,
                       'MATCH (seed) WHERE seed.name IN $seed_names
-                       MATCH (seed)-[*1..2]-(n)
+                       MATCH (seed)-[:{rel_union}*1..2]-(n)
                        RETURN DISTINCT id(n) AS id',
                       'MATCH (seed) WHERE seed.name IN $seed_names
-                       MATCH (seed)-[*1..2]-(n)-[r]-(m)
+                       MATCH (seed)-[:{rel_union}*1..2]-(n)-[r:{rel_union}]-(m)
                        WHERE id(n) IS NOT NULL AND id(m) IS NOT NULL
                        RETURN DISTINCT id(n) AS source, id(m) AS target',
-                      {parameters: {seed_names: $seed_names}, validateRelationships: false}
+                      {{parameters: {{seed_names: $seed_names}}, validateRelationships: false}}
                     )
                     """,
                     graphName=graph_name,
                     seed_names=seed_names,
                 )
 
-                # Run personalized PageRank seeded on initial nodes
-                records = session.run(
-                    """
-                    CALL gds.pageRank.stream($graphName, {maxIterations: 20, dampingFactor: 0.85})
-                    YIELD nodeId, score
-                    RETURN gds.util.asNode(nodeId) AS node, score
-                    ORDER BY score DESC
-                    LIMIT $limit
-                    """,
-                    graphName=graph_name,
-                    limit=limit,
-                )
+                # Lookup seed node ids for personalization.
+                # For named graphs, GDS expects Neo4j node ids here (not elementId).
+                seed_id_rec = session.run(
+                    "MATCH (seed) WHERE seed.name IN $seed_names RETURN collect(id(seed)) AS ids",
+                    seed_names=seed_names,
+                ).single()
+                seed_ids = (seed_id_rec or {}).get("ids") or []
+
+                # Run seed-biased PageRank on projected subgraph (budgeted).
+                # Some GDS versions may not support sourceNodes for pageRank; fallback safely.
+                try:
+                    if seed_ids:
+                        records = session.run(
+                            """
+                            CALL gds.pageRank.stream(
+                              $graphName,
+                              {maxIterations: 20, dampingFactor: 0.85, sourceNodes: $sourceNodes}
+                            )
+                            YIELD nodeId, score
+                            RETURN gds.util.asNode(nodeId) AS node, score
+                            ORDER BY score DESC
+                            LIMIT $limit
+                            """,
+                            graphName=graph_name,
+                            limit=limit,
+                            sourceNodes=seed_ids,
+                        )
+                    else:
+                        records = session.run(
+                            """
+                            CALL gds.pageRank.stream($graphName, {maxIterations: 20, dampingFactor: 0.85})
+                            YIELD nodeId, score
+                            RETURN gds.util.asNode(nodeId) AS node, score
+                            ORDER BY score DESC
+                            LIMIT $limit
+                            """,
+                            graphName=graph_name,
+                            limit=limit,
+                        )
+                except Exception as e:
+                    print(f"  [Warn] Personalized PageRank config unsupported, falling back to standard PageRank: {e}")
+                    records = session.run(
+                        """
+                        CALL gds.pageRank.stream($graphName, {maxIterations: 20, dampingFactor: 0.85})
+                        YIELD nodeId, score
+                        RETURN gds.util.asNode(nodeId) AS node, score
+                        ORDER BY score DESC
+                        LIMIT $limit
+                        """,
+                        graphName=graph_name,
+                        limit=limit,
+                    )
 
                 for record in records:
                     node = record["node"]

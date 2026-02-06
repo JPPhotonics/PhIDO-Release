@@ -34,9 +34,13 @@ if sudo docker ps -a | grep -q $CONTAINER_NAME; then
     fi
 else
     echo "Container '$CONTAINER_NAME' does not exist. Creating new container..."
+    # Ensure data directory exists
+    mkdir -p neo4j_data
+    
     sudo docker run -d \
         --name $CONTAINER_NAME \
         -p 7474:7474 -p 7687:7687 \
+        -v "$(pwd)/neo4j_data:/data" \
         -e NEO4J_AUTH=neo4j/$NEO4J_PASSWORD \
         -e NEO4J_ACCEPT_LICENSE_AGREEMENT=yes \
         -e NEO4J_PLUGINS='["apoc", "graph-data-science"]' \
