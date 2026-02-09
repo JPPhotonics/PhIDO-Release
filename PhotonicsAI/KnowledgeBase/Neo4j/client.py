@@ -6,6 +6,7 @@ from neo4j import GraphDatabase
 
 from .config import Neo4jConfig
 from .importer import Neo4jImporter
+from .schema_registry import SchemaRegistry
 
 class Neo4jClient:
     """Main client for interacting with the Neo4j knowledge base."""
@@ -77,6 +78,14 @@ class Neo4jClient:
         
         self._initialize_vector_indexes()
         self._initialize_constraints()
+        # Ensure seed relationship types exist in the schema registry
+        self.get_schema_registry().initialize_seed_schema()
+
+    def get_schema_registry(self) -> SchemaRegistry:
+        """Return a SchemaRegistry instance backed by this client's driver."""
+        if not self._connected:
+            self.connect()
+        return SchemaRegistry(self.driver)
 
     def _initialize_vector_indexes(self):
         """Automatically create vector indexes if they don't exist."""

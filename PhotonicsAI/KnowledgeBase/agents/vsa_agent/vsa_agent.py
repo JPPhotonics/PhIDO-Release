@@ -1,7 +1,7 @@
 """VSA Agent: Validation and Synthesis."""
 
 import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
 
 from PhotonicsAI.KnowledgeBase.Neo4j.client import Neo4jClient
 from PhotonicsAI.Photon import llm_api
@@ -22,7 +22,11 @@ from .prompts import (
     MERGE_USER_PROMPT_TEMPLATE,
     DEEP_INFERENCE_SYS_PROMPT,
     DEEP_INFERENCE_USER_TEMPLATE,
+    build_deep_inference_sys_prompt,
 )
+
+if TYPE_CHECKING:
+    from PhotonicsAI.KnowledgeBase.Neo4j.schema_registry import SchemaRegistry
 
 
 class VSAAgent:
@@ -36,7 +40,8 @@ class VSAAgent:
     def __init__(
         self,
         kb_client: Optional[Neo4jClient] = None,
-        llm_model: str = "gemini-2.5-pro"
+        llm_model: str = "gemini-2.5-pro",
+        schema_registry: Optional["SchemaRegistry"] = None,
     ):
         """
         Initialize VSA Agent.
@@ -44,6 +49,9 @@ class VSAAgent:
         Args:
             kb_client: Neo4jClient instance (will create if None)
             llm_model: LLM model to use for validation and merging
+            schema_registry: Optional SchemaRegistry for dynamic edge types.
+                If provided, edge-type prompts and validation are driven by
+                the registry rather than the hardcoded EdgeTypeEnum.
         """
         if kb_client is None:
             kb_client = Neo4jClient()
@@ -51,6 +59,7 @@ class VSAAgent:
             
         self.kb_client = kb_client
         self.llm_model = llm_model
+        self.schema_registry = schema_registry
         
         # Collection mapping
         self.type_to_collection = {
@@ -259,6 +268,8 @@ class VSAAgent:
     ) -> List[ProposedEdge]:
         """
         Deep Inference module: Uses LLM to infer implicit relationships from paper context.
+        When a SchemaRegistry is available, the prompt includes the dynamic schema and
+        the LLM may propose novel relationship types.
         """
         # Step A: Preparation
         # Aggregate unique evidence quotes and entity names
@@ -289,11 +300,19 @@ class VSAAgent:
             entities_list=entities_list_str,
             evidence_quotes=quotes_str
         )
+
+        # Choose system prompt: dynamic (registry-backed) or legacy (hardcoded)
+        if self.schema_registry is not None:
+            sys_prompt = build_deep_inference_sys_prompt(
+                self.schema_registry.get_prompt_schema_block()
+            )
+        else:
+            sys_prompt = DEEP_INFERENCE_SYS_PROMPT
         
         try:
             result = llm_api.callgoogle_pydantic(
                 prompt=prompt,
-                sys_prompt=DEEP_INFERENCE_SYS_PROMPT,
+                sys_prompt=sys_prompt,
                 pydantic_model=InferredEdgeList
             )
             inferred_edges = result.edges
@@ -301,65 +320,98 @@ class VSAAgent:
             print(f"  [Inference] LLM call failed: {e}")
             return []
 
+        # Build dynamic edge rules from registry (or fall back to hardcoded)
+        if self.schema_registry is not None:
+            edge_rules = self.schema_registry.get_edge_rules()
+            active_type_names = set(self.schema_registry.get_active_type_names())
+        else:
+            edge_rules = {
+                "PERFORMS_FUNCTION": (["Component", "Architecture"], ["Design_Function"]),
+                "BASED_ON_PRINCIPLE": (["Component", "Architecture"], ["Physical_Principle"]),
+                "HAS_PROPERTY": (["Component", "Architecture"], ["Property"]),
+                "USES_COMPONENT": (["Architecture"], ["Component"]),
+            }
+            active_type_names = {e.value for e in EdgeTypeEnum}
+
         # Step C: Verification & Conversion
         proposed_edges = []
         for edge in inferred_edges:
             # 1. Entity Existence Check
-            # We check if both nodes are in our current registry (local context)
-            # OR if we assume they exist in KB. For local inference, restrict to local context + known.
-            # (Strict logic: source/target must be in entity_registry keys)
-            # Fuzzy check: names might vary slightly? For now, strict exact match or simple containment.
-            
             src_valid = edge.source_node in entity_registry
             tgt_valid = edge.target_node in entity_registry
             
             if not (src_valid and tgt_valid):
-                # Optionally, log filtered edges
                 continue
                 
             # 2. Schema Constraint Validation
             src_type = entity_registry[edge.source_node]
             tgt_type = entity_registry[edge.target_node]
-            etype = edge.edge_type
-            
+            etype = edge.edge_type  # now a plain str
+
+            # 3. Confidence Threshold
+            if edge.confidence_score < 0.7:
+                continue
+
+            # --- Novel type handling ---
+            if edge.is_novel and etype not in active_type_names:
+                # Record the observation for potential future promotion
+                if self.schema_registry is not None:
+                    self.schema_registry.record_observation(
+                        proposed_type=etype,
+                        description=edge.novel_type_description or edge.inference_reasoning,
+                        from_entity=edge.source_node,
+                        from_type=src_type,
+                        to_entity=edge.target_node,
+                        to_type=tgt_type,
+                        evidence=quote_list,
+                        confidence=edge.confidence_score,
+                        document_key=document_key,
+                    )
+                    print(f"  [Inference] Recorded novel type observation: {etype}")
+                # Fall through: create a RELATED_TO edge for graph connectivity
+                src_coll = self.type_to_collection.get(src_type, "Concepts")
+                tgt_coll = self.type_to_collection.get(tgt_type, "Concepts")
+                proposed_edges.append(ProposedEdge(
+                    edge_collection="RELATED_TO",
+                    from_node=edge.source_node,
+                    from_collection=src_coll,
+                    to_node=edge.target_node,
+                    to_collection=tgt_coll,
+                    operation="MERGE",
+                    description=f"Novel type '{etype}': {edge.inference_reasoning} (Confidence: {edge.confidence_score})",
+                    evidence_quotes=quote_list,
+                    weight=edge.confidence_score,
+                    confidence=edge.confidence_score,
+                    source_document=document_key,
+                    provenance="VSA",
+                    extracted_at=extracted_at,
+                ))
+                continue
+
+            # --- Known type validation ---
             is_valid_schema = False
-            
-            if etype == EdgeTypeEnum.PERFORMS_FUNCTION:
-                if src_type in ["Component", "Architecture"] and tgt_type == "Design_Function":
-                    is_valid_schema = True
-            elif etype == EdgeTypeEnum.BASED_ON_PRINCIPLE:
-                if src_type in ["Component", "Architecture"] and tgt_type == "Physical_Principle":
-                    is_valid_schema = True
-            elif etype == EdgeTypeEnum.HAS_PROPERTY:
-                if src_type in ["Component", "Architecture"] and tgt_type == "Property":
-                    is_valid_schema = True
-            elif etype == EdgeTypeEnum.USES_COMPONENT:
-                if src_type == "Architecture" and tgt_type == "Component":
-                    is_valid_schema = True
-            elif etype == EdgeTypeEnum.RELATED_TO:
-                if src_type == tgt_type: # Simple rule: related entities usually same type category here
-                    is_valid_schema = True
+            if etype in edge_rules:
+                allowed_src, allowed_tgt = edge_rules[etype]
+                is_valid_schema = (src_type in allowed_src) and (tgt_type in allowed_tgt)
+            elif etype == "RELATED_TO":
+                # RELATED_TO is a wildcard; accept same-type pairs or any pair
+                is_valid_schema = True
             
             if not is_valid_schema:
                 print(f"  [Inference] Schema violation: {edge.source_node}({src_type}) -[{etype}]-> {edge.target_node}({tgt_type})")
                 continue
                 
-            # 3. Confidence Threshold
-            if edge.confidence_score < 0.7:
-                continue
-                
             # Step D: Create ProposedEdge
-            # Determine collections based on types
             src_coll = self.type_to_collection.get(src_type, "Concepts")
             tgt_coll = self.type_to_collection.get(tgt_type, "Concepts")
             
             proposed_edges.append(ProposedEdge(
-                edge_collection=edge.edge_type.value,
+                edge_collection=etype,
                 from_node=edge.source_node,
                 from_collection=src_coll,
                 to_node=edge.target_node,
                 to_collection=tgt_coll,
-                operation="MERGE", # Safest default
+                operation="MERGE",
                 description=f"{edge.inference_reasoning} (Confidence: {edge.confidence_score})",
                 evidence_quotes=quote_list,
                 weight=edge.confidence_score,

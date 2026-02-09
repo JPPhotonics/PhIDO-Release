@@ -15,6 +15,7 @@ except Exception:  # pragma: no cover - fallback for older streamlit
 
 from PhotonicsAI.KnowledgeBase.Neo4j.client import Neo4jClient
 from PhotonicsAI.KnowledgeBase.Neo4j.config import Neo4jConfig
+from PhotonicsAI.KnowledgeBase.Neo4j.schema_registry import SchemaRegistry
 from PhotonicsAI.KnowledgeBase.agents.dia_agent import DIAAgent
 from PhotonicsAI.KnowledgeBase.agents.vsa_agent.models import ProposedNode, ProposedEdge
 
@@ -182,13 +183,20 @@ def main() -> None:
 
             selected_edge_type = None
             if can_commit_edge:
-                edge_type_options = [
-                    "PERFORMS_FUNCTION",
-                    "BASED_ON_PRINCIPLE",
-                    "HAS_PROPERTY",
-                    "USES_COMPONENT",
-                    "RELATED_TO",
-                ]
+                # Load active edge types from SchemaRegistry (dynamic)
+                try:
+                    registry = SchemaRegistry(client.driver)
+                    edge_type_options = registry.get_active_type_names()
+                    # Filter out EXTRACTED_FROM as it's not a user-facing edge type
+                    edge_type_options = [t for t in edge_type_options if t != "EXTRACTED_FROM"]
+                except Exception:
+                    edge_type_options = [
+                        "PERFORMS_FUNCTION",
+                        "BASED_ON_PRINCIPLE",
+                        "HAS_PROPERTY",
+                        "USES_COMPONENT",
+                        "RELATED_TO",
+                    ]
                 current_edge_type = payload.get("edge_collection")
                 if current_edge_type and current_edge_type not in edge_type_options:
                     edge_type_options.append(current_edge_type)

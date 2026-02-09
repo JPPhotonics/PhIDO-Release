@@ -20,9 +20,11 @@ sys.path.append(str(Path(__file__).parent))
 from PhotonicsAI.KnowledgeBase.agents.ppc_agent import PPCAgent
 from PhotonicsAI.KnowledgeBase.agents.vsa_agent import VSAAgent
 from PhotonicsAI.KnowledgeBase.agents.dia_agent import DIAAgent
+from PhotonicsAI.KnowledgeBase.agents.sea_agent import SchemaEvolutionAgent
 from PhotonicsAI.KnowledgeBase.agents.ppc_agent.models import PPCResult, NormalizedEntity, NewConcept
 from PhotonicsAI.KnowledgeBase.Neo4j.client import Neo4jClient
 from PhotonicsAI.KnowledgeBase.Neo4j.config import Neo4jConfig
+from PhotonicsAI.KnowledgeBase.Neo4j.schema_registry import SchemaRegistry
 from PhotonicsAI.KnowledgeBase.Neo4j.visualization import Neo4jVisualizer
 from PhotonicsAI.Photon import llm_api
 
@@ -440,7 +442,13 @@ def generate_dia_performance_report(dia_report, llm_calls, output_html_path: Pat
 # MAIN WORKFLOW
 # =============================================================================
 
-def process_single_paper(pdf_path: Path, output_dir: Path, client: Neo4jClient, tracer: LLMTracer):
+def process_single_paper(
+    pdf_path: Path,
+    output_dir: Path,
+    client: Neo4jClient,
+    tracer: LLMTracer,
+    schema_registry: SchemaRegistry | None = None,
+):
     """Process a single PDF through PPC -> VSA -> DIA."""
     doc_id = pdf_path.stem
     doc_out_dir = output_dir / doc_id
@@ -466,7 +474,11 @@ def process_single_paper(pdf_path: Path, output_dir: Path, client: Neo4jClient, 
     
     # --- Phase 2: VSA ---
     print("--- Phase 2: VSA Agent ---")
-    vsa_agent = VSAAgent(kb_client=client, llm_model="gemini-2.5-pro")
+    vsa_agent = VSAAgent(
+        kb_client=client,
+        llm_model="gemini-2.5-pro",
+        schema_registry=schema_registry,
+    )
     
     # Reconstruct objects for VSA
     known = [NormalizedEntity(**e) for e in ppc_result.get("known_entities", [])]
@@ -487,7 +499,11 @@ def process_single_paper(pdf_path: Path, output_dir: Path, client: Neo4jClient, 
     
     # --- Phase 3: DIA ---
     print("--- Phase 3: DIA Agent ---")
-    dia_agent = DIAAgent(kb_client=client, llm_model="gemini-2.5-pro")
+    dia_agent = DIAAgent(
+        kb_client=client,
+        llm_model="gemini-2.5-pro",
+        schema_registry=schema_registry,
+    )
     
     try:
         report = dia_agent.integrate_manifest(manifest)
@@ -547,6 +563,11 @@ def main():
         print(f"Failed to connect to Neo4j: {e}")
         return
 
+    # Initialize Schema Registry (idempotent seed)
+    schema_registry = SchemaRegistry(client.driver)
+    schema_registry.initialize_seed_schema()
+    print("✓ Schema registry initialized")
+
     # Initialize Tracer
     tracer = LLMTracer()
     tracer.start()
@@ -567,7 +588,7 @@ def main():
         # Let's snapshot the start index.
         start_idx = len(tracer.records)
         
-        if process_single_paper(pdf_path, output_dir, client, tracer):
+        if process_single_paper(pdf_path, output_dir, client, tracer, schema_registry):
             success_count += 1
             
         # Optimization: Pass only NEW records to the report generator?
@@ -578,8 +599,32 @@ def main():
     # Stop Tracer & Dump
     tracer.stop()
     tracer.dump_records(output_dir / "full_llm_trace.json")
-    
-    # 3. Final Visualization
+
+    # 3. Schema Evolution (post-batch)
+    print("\n--- Schema Evolution Agent ---")
+    try:
+        sea = SchemaEvolutionAgent(
+            kb_client=client,
+            schema_registry=schema_registry,
+            llm_model="gemini-2.5-pro",
+        )
+        evolution_report = sea.evolve()
+        # Save report
+        with open(output_dir / "schema_evolution_report.json", "w") as f:
+            f.write(evolution_report.model_dump_json(indent=2))
+        if evolution_report.new_types_promoted:
+            print(f"✓ Promoted {len(evolution_report.new_types_promoted)} new relationship types:")
+            for t in evolution_report.new_types_promoted:
+                print(f"  + {t}")
+            print(f"  Recategorized {evolution_report.edges_recategorized_auto} edges "
+                  f"(queued {evolution_report.edges_queued_for_review} for review)")
+        else:
+            print("  No new types promoted this run.")
+    except Exception as e:
+        print(f"Schema Evolution failed: {e}")
+        traceback.print_exc()
+
+    # 4. Final Visualization
     print("\nGenerating Full Knowledge Graph Visualization...")
     try:
         viz = Neo4jVisualizer(client)

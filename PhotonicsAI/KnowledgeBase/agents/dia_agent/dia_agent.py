@@ -2,14 +2,22 @@
 
 import datetime
 import json
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
 from uuid import uuid4
 
 from PhotonicsAI.KnowledgeBase.Neo4j.client import Neo4jClient
 from PhotonicsAI.Photon import llm_api
 from PhotonicsAI.KnowledgeBase.agents.vsa_agent.models import VSAUpdatePayload, ProposedNode, ProposedEdge
 from .models import DIAReport, SemanticVerificationResult, BatchSemanticVerificationResult
-from .prompts import SEMANTIC_VERIFICATION_SYS_PROMPT, SEMANTIC_VERIFICATION_USER_TEMPLATE, PAIR_TEMPLATE
+from .prompts import (
+    SEMANTIC_VERIFICATION_SYS_PROMPT,
+    SEMANTIC_VERIFICATION_USER_TEMPLATE,
+    PAIR_TEMPLATE,
+    build_semantic_verification_sys_prompt,
+)
+
+if TYPE_CHECKING:
+    from PhotonicsAI.KnowledgeBase.Neo4j.schema_registry import SchemaRegistry
 
 class DIAAgent:
     """
@@ -19,10 +27,20 @@ class DIAAgent:
     to discover implicit relationships with existing Knowledge Base entities.
     """
 
+    # Fallback hardcoded constraints used when no SchemaRegistry is provided
+    _FALLBACK_EDGE_CONSTRAINTS = {
+        "Component": ["Physical_Principle", "Design_Function", "Property"],
+        "Architecture": ["Component", "Physical_Principle", "Design_Function", "Property"],
+        "Physical_Principle": ["Component", "Architecture"],
+        "Design_Function": ["Component", "Architecture"],
+        "Property": ["Component", "Architecture"],
+    }
+
     def __init__(
         self,
         kb_client: Optional[Neo4jClient] = None,
-        llm_model: str = "gemini-2.5-pro"
+        llm_model: str = "gemini-2.5-pro",
+        schema_registry: Optional["SchemaRegistry"] = None,
     ):
         """
         Initialize DIA Agent.
@@ -30,6 +48,9 @@ class DIAAgent:
         Args:
             kb_client: Neo4jClient instance
             llm_model: LLM model to use for verification
+            schema_registry: Optional SchemaRegistry for dynamic edge types.
+                When provided, edge constraints, edge rules, and relationship
+                type lists are read from the registry instead of hardcoded values.
         """
         if kb_client is None:
             kb_client = Neo4jClient()
@@ -37,16 +58,7 @@ class DIAAgent:
             
         self.kb_client = kb_client
         self.llm_model = llm_model
-        
-        # Edge Constraints (Source Type -> [Target Types]) for semantic search filtering
-        # Used to narrow down which collections to search for candidates
-        self.edge_constraints = {
-            "Component": ["Physical_Principle", "Design_Function", "Property"],
-            "Architecture": ["Component", "Physical_Principle", "Design_Function", "Property"],
-            "Physical_Principle": ["Component", "Architecture"], # Bi-directional potential
-            "Design_Function": ["Component", "Architecture"],
-            "Property": ["Component", "Architecture"]
-        }
+        self.schema_registry = schema_registry
         
         # Mapping from Entity Type to Collection Name
         self.type_to_collection = {
@@ -64,6 +76,13 @@ class DIAAgent:
             "Physical_Principle": "Physical_Principles",
             "Document": "Documents",
         }
+
+    @property
+    def edge_constraints(self) -> Dict[str, List[str]]:
+        """Edge constraints derived from registry, falling back to hardcoded defaults."""
+        if self.schema_registry is not None:
+            return self.schema_registry.get_edge_constraints()
+        return self._FALLBACK_EDGE_CONSTRAINTS
 
     def integrate_manifest(self, manifest: VSAUpdatePayload) -> DIAReport:
         """
@@ -190,13 +209,16 @@ class DIAAgent:
         PPR_LIMIT = 20
         MAX_CANDIDATES_PER_NODE = 25
         MIN_DESC_CHARS = 40
-        CORE_REL_TYPES = [
-            "PERFORMS_FUNCTION",
-            "BASED_ON_PRINCIPLE",
-            "HAS_PROPERTY",
-            "USES_COMPONENT",
-            "RELATED_TO",
-        ]
+        if self.schema_registry is not None:
+            CORE_REL_TYPES = self.schema_registry.get_core_rel_types()
+        else:
+            CORE_REL_TYPES = [
+                "PERFORMS_FUNCTION",
+                "BASED_ON_PRINCIPLE",
+                "HAS_PROPERTY",
+                "USES_COMPONENT",
+                "RELATED_TO",
+            ]
         
         # Map collection names back to entity types for logic
         collection_to_type = {v: k for k, v in self.type_to_collection.items()}
@@ -362,11 +384,19 @@ class DIAAgent:
             
             prompt = SEMANTIC_VERIFICATION_USER_TEMPLATE.format(pairs_content=pairs_content)
             
+            # Choose system prompt: dynamic (registry-backed) or legacy (hardcoded)
+            if self.schema_registry is not None:
+                verification_sys_prompt = build_semantic_verification_sys_prompt(
+                    self.schema_registry.get_prompt_schema_block()
+                )
+            else:
+                verification_sys_prompt = SEMANTIC_VERIFICATION_SYS_PROMPT
+
             try:
                 print(f"  Processing batch {chunk_idx+1}/{len(chunks)} ({len(chunk)} pairs)...")
                 batch_result = llm_api.callgoogle_pydantic(
                     prompt=prompt,
-                    sys_prompt=SEMANTIC_VERIFICATION_SYS_PROMPT,
+                    sys_prompt=verification_sys_prompt,
                     pydantic_model=BatchSemanticVerificationResult
                 )
                 
@@ -399,21 +429,27 @@ class DIAAgent:
                     cand_type = task["cand_type"]
                     cand_collection = task["cand_collection"]
 
-                    # Define constraints for edge directions to ensure correct graph topology
-                    # Map: Edge Type -> (Allowed Source Types, Allowed Target Types)
-                    edge_rules = {
-                        "PERFORMS_FUNCTION": (["Component", "Architecture"], ["Design_Function"]),
-                        "BASED_ON_PRINCIPLE": (["Component", "Architecture"], ["Physical_Principle"]),
-                        "HAS_PROPERTY": (["Component", "Architecture"], ["Property"]),
-                        "USES_COMPONENT": (["Architecture"], ["Component"]),
-                        # RELATED_TO is generic, usually keep direction as found or ignore
-                    }
+                    # Build edge rules dynamically from registry or fall back to hardcoded
+                    if self.schema_registry is not None:
+                        edge_rules = self.schema_registry.get_edge_rules()
+                        active_type_names = set(self.schema_registry.get_active_type_names())
+                    else:
+                        edge_rules = {
+                            "PERFORMS_FUNCTION": (["Component", "Architecture"], ["Design_Function"]),
+                            "BASED_ON_PRINCIPLE": (["Component", "Architecture"], ["Physical_Principle"]),
+                            "HAS_PROPERTY": (["Component", "Architecture"], ["Property"]),
+                            "USES_COMPONENT": (["Architecture"], ["Component"]),
+                        }
+                        active_type_names = set(edge_rules.keys()) | {"RELATED_TO"}
 
                     etype = res.edge_type if res.edge_type and res.edge_type != "None" else None
                     from_n, from_c = node.name, node.collection
                     to_n, to_c = cand_name, cand_collection
                     from_type = node_type
                     to_type = cand_type
+
+                    # Detect novel type proposal from the LLM
+                    is_novel_type = etype is not None and etype not in active_type_names
 
                     is_direct_valid = False
                     is_reverse_valid = False
@@ -439,7 +475,28 @@ class DIAAgent:
                     llm_conf = float(getattr(res, "confidence", 0.0) or 0.0)
 
                     if res.is_related and etype:
-                        schema_ok = 1.0 if is_direct_valid or is_reverse_valid else 0.0
+                        # --- Novel type: record observation, commit as RELATED_TO ---
+                        if is_novel_type:
+                            if self.schema_registry is not None:
+                                self.schema_registry.record_observation(
+                                    proposed_type=etype,
+                                    description=res.reasoning,
+                                    from_entity=from_n,
+                                    from_type=from_type,
+                                    to_entity=to_n,
+                                    to_type=to_type,
+                                    evidence=list(node.evidence_quotes or []),
+                                    confidence=llm_conf,
+                                    document_key=node.source_document or "",
+                                )
+                                print(f"  [Inference] Recorded novel type observation: {etype}")
+                            # Commit as RELATED_TO so the graph still gets connectivity
+                            commit_etype = "RELATED_TO"
+                            schema_ok = 0.0
+                        else:
+                            commit_etype = etype
+                            schema_ok = 1.0 if is_direct_valid or is_reverse_valid else 0.0
+
                         combined_conf = (
                             0.45 * similarity_score +
                             0.15 * evidence_score +
@@ -448,13 +505,13 @@ class DIAAgent:
                         )
 
                         edge = ProposedEdge(
-                            edge_collection=etype,
+                            edge_collection=commit_etype,
                             from_node=from_n,
                             from_collection=from_c,
                             to_node=to_n,
                             to_collection=to_c,
                             operation="MERGE",
-                            description=f"Global Inference: {res.reasoning}",
+                            description=f"Global Inference: {res.reasoning}" + (f" (novel type: {etype})" if is_novel_type else ""),
                             evidence_quotes=list(node.evidence_quotes or []),
                             weight=combined_conf,
                             confidence=combined_conf,
@@ -463,7 +520,7 @@ class DIAAgent:
                             extracted_at=extracted_at
                         )
                         inferred_edges.append(edge)
-                        print(f"  [Inference] Found link: {from_n} --[{etype}]--> {to_n}")
+                        print(f"  [Inference] Found link: {from_n} --[{commit_etype}]--> {to_n}")
                     else:
                         combined_conf = (
                             0.55 * similarity_score +

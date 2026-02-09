@@ -74,9 +74,14 @@ class InferredEdge(BaseModel):
     """A hypothetical edge inferred from context."""
     source_node: str = Field(..., description="Name of the source entity")
     target_node: str = Field(..., description="Name of the target entity")
-    edge_type: EdgeTypeEnum = Field(..., description="Type of relationship")
+    edge_type: str = Field(..., description="Type of relationship (e.g. PERFORMS_FUNCTION, or a novel UPPER_SNAKE_CASE type)")
     confidence_score: float = Field(..., description="Confidence from 0.0 to 1.0")
     inference_reasoning: str = Field(..., description="Explanation of why this edge was inferred")
+    # Novel type discovery fields
+    is_novel: bool = Field(False, description="True if proposing a new relationship type not in the current schema")
+    novel_type_description: Optional[str] = Field(None, description="Description of the proposed novel type (required when is_novel=True)")
+    novel_source_types: List[str] = Field(default_factory=list, description="Expected source entity types for the novel type")
+    novel_target_types: List[str] = Field(default_factory=list, description="Expected target entity types for the novel type")
 
 class InferredEdgeList(BaseModel):
     """Container for list of inferred edges."""
