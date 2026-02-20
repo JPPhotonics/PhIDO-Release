@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.venv/
+venv/
+
+# Neo4j runtime data
+neo4j_data/
+neo4j_logs/
+neo4j_plugins/
+
+# Output / artifacts
+output/
+circuit
+*.gds
+
+# PDFs and papers
+*.pdf
+papers/
+
+# Temporary reports and visualizations
+*_report.html
+*_report.json
+*_report.md
+*_graph.html
+*_viz.html
+
+# Temp API responses
+anthropic_response.yml
+google_response.yml
+
+# Test artifacts
+sample_paper*
+*_test.json
+*_test.html
+intent_output.json
+axDocAnnotator_ppc_agent_results.json
+ppc_agent_results.json
+
+# Test scripts
+quick_pdk_test.py
+simple_pdk_test.py
+test_subprocess_mcp_client.py
+example_mcp_usage.py
+CS_PDK_TESTS/
+
+# Misc
+*.Zone.Identifier
+lib/
+drc/
+mzi_subgraph.ttl
+acronym_mappings.json.bak

@@ -1,0 +1,45 @@
+# Docker Compose for Neo4j Knowledge Base
+# Usage:
+#   Start:   sudo docker compose up -d
+#   Stop:    sudo docker compose down          (preserves data)
+#   Destroy: sudo docker compose down -v       (wipes named volumes)
+#   Logs:    sudo docker compose logs -f neo4j
+
+services:
+  neo4j:
+    image: neo4j:5.15-enterprise
+    container_name: neo4j-phido
+    restart: unless-stopped
+    ports:
+      - "7474:7474"   # HTTP browser
+      - "7687:7687"   # Bolt protocol
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_plugins:/plugins
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-password}
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+      NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
+      # Memory tuning
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
+      # Keep 2 days of transaction logs (enables point-in-time recovery)
+      NEO4J_db_tx__log_rotation_retention__policy: "2 days"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+# Named volumes — managed by Docker, survive container removal and crashes.
+# Data lives in /var/lib/docker/volumes/ and is only removed with `docker compose down -v`.
+volumes:
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+  neo4j_plugins:
+    driver: local
+
