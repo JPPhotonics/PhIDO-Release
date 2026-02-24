@@ -15,11 +15,16 @@ calls at all. If it never consulted the KG (zero calls), it prompts a self-audit
 If the agent did consult the KG at least once, we trust its judgment.
 
 Phases:
-  Phase 0   — LLM concept extraction from user prompt
-  Phase 1   — Free agentic exploration (tool calls driven by LLM)
-  Phase 1.5 — KG Grounding Gate (self-audit prompt if zero KG calls were made)
-  Phase 2   — Structured output extraction (DesignIntent)
-  Phase 3   — Critic review (independent agent verifies output; loops back on failure)
+  Phase 0    — LLM concept extraction from user prompt
+  Phase 1    — Free agentic exploration (tool calls driven by LLM)
+  Phase 1.5  — KG Grounding Gate (self-audit prompt if zero KG calls were made)
+  Phase 1.75 — Disambiguation (agent asks user clarification questions)
+  Phase 2    — Structured output extraction (DesignIntent)
+  Phase 3    — Critic review (independent agent verifies output; loops back on failure)
+
+The pipeline is split into two entry points for Streamlit compatibility:
+  explore_and_ask()  — Phases 0 → 1 → 1.5 → 1.75 (pauses for user input)
+  finalize_stream()  — Phases 2 → 3 (resumes with optional clarifications)
 
 Usage:
     from mcp_servers.interpreter_agent import interpret
@@ -33,7 +38,10 @@ from typing import Any, Generator, Optional
 
 from pydantic import BaseModel, Field
 from openai import OpenAI
-from mcp_servers.models import DesignIntent, ComponentIntent, Connection
+from mcp_servers.models import (
+    DesignIntent, ComponentIntent, Connection,
+    ClarificationQuestion, ClarificationRequest,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -419,7 +427,9 @@ independently verify claims if needed — do NOT trust the interpreter's work bl
 You will be given:
 1. The original user prompt
 2. Extracted concepts (components, parameters, specs) from the prompt
-3. The DesignIntent JSON produced by the interpreter
+3. (If applicable) User clarifications — answers the user gave to the interpreter's 
+   disambiguation questions. These are authoritative extensions of the original prompt.
+4. The DesignIntent JSON produced by the interpreter
 
 Check the following:
 
@@ -434,6 +444,8 @@ Check the following:
 - No hallucinated components or connections that the user did not ask for.
 - Component roles match what the user described.
 - No invented specifications — only user-stated values should appear in specs.
+- If user clarifications are provided, details derived from those answers are NOT 
+  hallucinations. They are valid design requirements even if not in the original prompt.
 
 **PDK accuracy**
 - Port configs are only set when they can be verified against the PDK. If in doubt, use 
@@ -497,6 +509,37 @@ Critic summary: {summary}
 
 Please re-investigate using your tools and address these problems. Focus on the major 
 issues first. When done, say DONE with your updated findings.
+"""
+
+DISAMBIGUATION_PROMPT = """\
+Before we finalize the design, review your findings and identify any remaining 
+uncertainties, choices, or ambiguities that the user should clarify.
+
+For each question:
+- **question**: What you need the user to tell you.
+- **context**: What you found in your search that raised this question. Be specific — 
+  reference tool results (e.g. "PDK has both mzi_2x2_heater_tin_cband and 
+  mzi_2x2_pindiode_cband — which tuning mechanism do you want?").
+- **options**: Concrete choices if applicable (e.g. ["TiN heater", "PIN diode"]).
+  Leave empty for open-ended questions.
+- **default**: What you would assume if the user doesn't answer.
+- **priority**: "critical" if the design cannot proceed without an answer (e.g. a 
+  fundamental topology choice), or "helpful" if you can make a reasonable default 
+  but the user might want to override it.
+
+If you have no questions and are fully confident, set ready_to_proceed to True 
+with an empty questions list. Do not invent questions just to seem thorough — only 
+ask if there is genuine uncertainty informed by your tool results.
+"""
+
+CLARIFICATION_INJECTION_PROMPT = """\
+The user has provided the following clarifications:
+
+{clarification_items}
+
+Update your analysis to incorporate these answers. If any clarification changes which 
+PDK component you should use or how the circuit should be structured, verify with the 
+appropriate tools now. When done, say DONE with your updated findings.
 """
 
 
@@ -565,13 +608,13 @@ def _run_critic(
     design_intent: DesignIntent,
     model: str,
     max_rounds: int = 10,
+    clarifications: Optional[dict[str, str]] = None,
 ) -> Generator[AgentEvent, None, None]:
     """Run the critic agent. Yields streaming events and ends with a 'critic' event.
 
     The critic has its own separate conversation (not the interpreter's messages)
     and full tool access for independent verification.
     """
-    # Build the user message for the critic with all context
     di_json = json.dumps(design_intent.full(), indent=2, ensure_ascii=False)
     concepts_summary = (
         f"Components/architectures: {', '.join(extracted.components) or 'none'}\n"
@@ -579,9 +622,22 @@ def _run_critic(
         f"Specs/measurements: {', '.join(extracted.specs) or 'none'}"
     )
 
+    clarification_section = ""
+    if clarifications:
+        items = "\n".join(f"  - **Q:** {q}\n    **A:** {a}" for q, a in clarifications.items())
+        clarification_section = (
+            f"\n\n## User Clarifications\n"
+            f"After the initial exploration, the agent asked the user clarification "
+            f"questions. The user provided these answers, which are now part of the "
+            f"design requirements:\n\n{items}\n\n"
+            f"Treat these answers as authoritative extensions of the original prompt. "
+            f"Details that come from user clarifications are NOT hallucinations."
+        )
+
     critic_user_msg = (
         f"## Original User Prompt\n{user_prompt}\n\n"
-        f"## Extracted Concepts\n{concepts_summary}\n\n"
+        f"## Extracted Concepts\n{concepts_summary}"
+        f"{clarification_section}\n\n"
         f"## DesignIntent to Review\n```json\n{di_json}\n```"
     )
 
@@ -658,33 +714,25 @@ def _extract_kg_queried_concepts(tool_log: list[tuple[str, dict]]) -> set[str]:
 
 
 # ---------------------------------------------------------------------------
-# Streaming agent loop — yields typed event dicts
+# Phase 1 pipeline: explore + ask — yields events through Phase 1.75
 # ---------------------------------------------------------------------------
 
-def interpret_stream(
+def explore_and_ask(
     user_prompt: str,
     model: str = "o3-mini",
     max_tool_rounds: int = 15,
     max_grounding_rounds: int = 5,
-    max_critic_rounds: int = 2,
 ) -> Generator[AgentEvent, None, None]:
     """
-    Streaming interpreter — yields events as the agent reasons.
+    Run Phases 0 → 1 → 1.5 → 1.75 (disambiguation).
 
-    Phases 1 → 1.5 → 2 → 3 form an outer loop. If the Phase 3 critic fails the
-    output, its feedback is injected and Phases 1 → 2 re-run (up to max_critic_rounds).
+    Yields streaming events for the UI plus a final ``"clarification"`` event
+    that contains the agent's questions and the full conversation history so
+    the pipeline can be resumed via ``finalize_stream()``.
 
-    Event types:
-        {"type": "phase",       "phase": str, "detail": str}
-        {"type": "concepts",    "components": list[str], "parameters": list[str], "specs": list[str]}
-        {"type": "tool_call",   "name": str,  "args": dict}
-        {"type": "tool_result", "name": str,  "result": str}
-        {"type": "agent_text",  "content": str}
-        {"type": "grounding",   "detail": str, "ungrounded": list[str]}
-        {"type": "stats",       "total": int, "pdk": int, "kg": int}
-        {"type": "critic",      "verdict": dict, "attempt": int}
-        {"type": "done",        "result": DesignIntent}
-        {"type": "error",       "message": str}
+    Event types (in addition to the standard phase/tool/agent events):
+        {"type": "clarification", "request": dict, "messages": list,
+         "extracted": dict, "tool_log": list}
     """
     client = OpenAI()
     tool_log: list[tuple[str, dict]] = []
@@ -708,20 +756,211 @@ def interpret_stream(
            "specs": extracted.specs}
 
     # -------------------------------------------------------------------
-    # Outer loop: Phase 1 → 1.5 → 2 → 3 (critic), repeat on failure
+    # Phase 1: Free agentic exploration
     # -------------------------------------------------------------------
-    total_attempts = 1 + max_critic_rounds  # first attempt + critic retries
-    design_intent: Optional[DesignIntent] = None
+    yield {"type": "phase", "phase": "exploration",
+           "detail": f"Agent reasoning (max {max_tool_rounds} rounds)..."}
 
-    for attempt in range(total_attempts):
-        is_retry = attempt > 0
-        attempt_label = f" (attempt {attempt + 1}/{total_attempts})" if total_attempts > 1 else ""
+    for round_num in range(max_tool_rounds):
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            tools=TOOLS if TOOLS else None,
+        )
+        choice = response.choices[0]
+        messages.append(choice.message)
 
-        # ---------------------------------------------------------------
-        # Phase 1: Free agentic exploration
-        # ---------------------------------------------------------------
-        yield {"type": "phase", "phase": "exploration",
-               "detail": f"Agent reasoning{attempt_label} (max {max_tool_rounds} rounds)..."}
+        if choice.message.tool_calls:
+            yield {"type": "phase", "phase": "exploration",
+                   "detail": f"Round {round_num + 1}: {len(choice.message.tool_calls)} tool call(s)"}
+            for tc in choice.message.tool_calls:
+                parsed_args, result = _execute_tool_raw(tc.function.name, tc.function.arguments)
+                tool_log.append((tc.function.name, parsed_args))
+
+                yield {"type": "tool_call", "name": tc.function.name, "args": parsed_args}
+                yield {"type": "tool_result", "name": tc.function.name, "result": result}
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result,
+                })
+        else:
+            content = choice.message.content or ""
+            yield {"type": "agent_text", "content": content}
+            break
+
+    # -------------------------------------------------------------------
+    # Phase 1.5: KG Grounding Gate
+    # -------------------------------------------------------------------
+    if _KG_AVAILABLE:
+        kg_calls = [t for t in tool_log if t[0] in _KG_TOOL_NAMES]
+        mentioned_filtered = set(extracted.components)
+
+        if len(kg_calls) == 0 and len(mentioned_filtered) > 0:
+            ungrounded_list = sorted(mentioned_filtered)
+            yield {"type": "grounding",
+                   "detail": f"Agent never consulted KG. Self-audit for {len(ungrounded_list)} concept(s).",
+                   "ungrounded": ungrounded_list}
+
+            grounding_msg = GROUNDING_GATE_PROMPT.format(
+                ungrounded_items="\n".join(f"  - {c}" for c in ungrounded_list)
+            )
+            messages.append({"role": "user", "content": grounding_msg})
+
+            yield {"type": "phase", "phase": "grounding",
+                   "detail": f"KG grounding gate triggered (max {max_grounding_rounds} rounds)..."}
+
+            for ground_round in range(max_grounding_rounds):
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    tools=TOOLS if TOOLS else None,
+                )
+                choice = response.choices[0]
+                messages.append(choice.message)
+
+                if choice.message.tool_calls:
+                    yield {"type": "phase", "phase": "grounding",
+                           "detail": f"Grounding round {ground_round + 1}: "
+                                     f"{len(choice.message.tool_calls)} tool call(s)"}
+                    for tc in choice.message.tool_calls:
+                        parsed_args, result = _execute_tool_raw(tc.function.name, tc.function.arguments)
+                        tool_log.append((tc.function.name, parsed_args))
+                        yield {"type": "tool_call", "name": tc.function.name, "args": parsed_args}
+                        yield {"type": "tool_result", "name": tc.function.name, "result": result}
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": result,
+                        })
+                else:
+                    content = choice.message.content or ""
+                    yield {"type": "agent_text", "content": content}
+                    break
+        else:
+            if len(kg_calls) > 0:
+                kg_queried = _extract_kg_queried_concepts(tool_log)
+                yield {"type": "phase", "phase": "grounding",
+                       "detail": f"Agent consulted KG for: {sorted(kg_queried)}. Gate not triggered."}
+            else:
+                yield {"type": "phase", "phase": "grounding",
+                       "detail": "No non-trivial concepts found. Gate not triggered."}
+    else:
+        yield {"type": "phase", "phase": "grounding",
+               "detail": "KG unavailable, skipping."}
+
+    # -------------------------------------------------------------------
+    # Tool stats
+    # -------------------------------------------------------------------
+    total_kg = len([t for t in tool_log if t[0] in _KG_TOOL_NAMES])
+    total_pdk = len([t for t in tool_log if t[0] not in _KG_TOOL_NAMES])
+    yield {"type": "stats", "total": len(tool_log), "pdk": total_pdk, "kg": total_kg}
+
+    # -------------------------------------------------------------------
+    # Phase 1.75: Disambiguation — agent generates clarification questions
+    # -------------------------------------------------------------------
+    yield {"type": "phase", "phase": "disambiguation",
+           "detail": "Agent assessing remaining uncertainties..."}
+
+    messages.append({"role": "user", "content": DISAMBIGUATION_PROMPT})
+
+    disambig_response = client.beta.chat.completions.parse(
+        model=model,
+        messages=messages,
+        response_format=ClarificationRequest,
+    )
+    disambig_msg = disambig_response.choices[0].message
+    if disambig_msg.parsed:
+        clarification_req = disambig_msg.parsed
+    else:
+        clarification_req = ClarificationRequest(questions=[], ready_to_proceed=True)
+
+    # Serialise messages for session state storage (ChatCompletionMessage → dict)
+    serializable_messages = _serialise_messages(messages)
+
+    yield {
+        "type": "clarification",
+        "request": clarification_req.model_dump(),
+        "messages": serializable_messages,
+        "extracted": extracted.model_dump(),
+        "tool_log": tool_log,
+    }
+
+
+def _serialise_messages(messages: list) -> list[dict]:
+    """Convert a message list to JSON-safe dicts (handles OpenAI objects)."""
+    out = []
+    for msg in messages:
+        if isinstance(msg, dict):
+            out.append(msg)
+        else:
+            d: dict = {"role": msg.role, "content": msg.content or ""}
+            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                d["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    }
+                    for tc in msg.tool_calls
+                ]
+            if hasattr(msg, "refusal") and msg.refusal:
+                d["refusal"] = msg.refusal
+            out.append(d)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Phase 2+ pipeline: finalize — takes saved state and produces DesignIntent
+# ---------------------------------------------------------------------------
+
+def finalize_stream(
+    messages: list,
+    tool_log: list[tuple[str, dict]],
+    user_prompt: str,
+    extracted_dict: dict,
+    model: str = "o3-mini",
+    max_tool_rounds: int = 10,
+    max_critic_rounds: int = 2,
+    clarifications: Optional[dict[str, str]] = None,
+) -> Generator[AgentEvent, None, None]:
+    """
+    Run Phases 2 → 3 (with optional clarification injection + re-exploration).
+
+    Parameters
+    ----------
+    messages : list
+        Conversation history from ``explore_and_ask()``.
+    tool_log : list
+        Tool call log from ``explore_and_ask()``.
+    user_prompt : str
+        Original user prompt (needed for critic context).
+    extracted_dict : dict
+        Serialised ``ExtractedConcepts`` from Phase 0.
+    clarifications : dict, optional
+        ``{ambiguity_question: user_answer}`` pairs from the disambiguation form.
+        If provided, injected before Phase 2.
+
+    Event types (same as explore_and_ask plus):
+        {"type": "done", "result": DesignIntent, "messages": list}
+        {"type": "error", "message": str}
+    """
+    client = OpenAI()
+    extracted = ExtractedConcepts(**extracted_dict)
+
+    # -------------------------------------------------------------------
+    # Inject user clarifications (if any) + brief re-exploration
+    # -------------------------------------------------------------------
+    if clarifications:
+        items = "\n".join(
+            f"  - **Q:** {q}\n    **A:** {a}" for q, a in clarifications.items()
+        )
+        injection = CLARIFICATION_INJECTION_PROMPT.format(clarification_items=items)
+        messages.append({"role": "user", "content": injection})
+
+        yield {"type": "phase", "phase": "clarification_update",
+               "detail": f"Injecting {len(clarifications)} clarification(s) and re-exploring..."}
 
         for round_num in range(max_tool_rounds):
             response = client.chat.completions.create(
@@ -733,7 +972,7 @@ def interpret_stream(
             messages.append(choice.message)
 
             if choice.message.tool_calls:
-                yield {"type": "phase", "phase": "exploration",
+                yield {"type": "phase", "phase": "clarification_update",
                        "detail": f"Round {round_num + 1}: {len(choice.message.tool_calls)} tool call(s)"}
                 for tc in choice.message.tool_calls:
                     parsed_args, result = _execute_tool_raw(tc.function.name, tc.function.arguments)
@@ -749,77 +988,22 @@ def interpret_stream(
                     })
             else:
                 content = choice.message.content or ""
-                yield {"type": "agent_text", "content": content}
+                if content.strip():
+                    yield {"type": "agent_text", "content": content}
                 break
 
-        # ---------------------------------------------------------------
-        # Phase 1.5: KG Grounding Gate (only on first attempt)
-        # ---------------------------------------------------------------
-        if not is_retry:
-            if _KG_AVAILABLE:
-                kg_calls = [t for t in tool_log if t[0] in _KG_TOOL_NAMES]
-                mentioned_filtered = set(extracted.components)
+    # -------------------------------------------------------------------
+    # Outer loop: Phase 2 → 3 (critic), repeat on failure
+    # -------------------------------------------------------------------
+    total_attempts = 1 + max_critic_rounds
+    design_intent: Optional[DesignIntent] = None
 
-                if len(kg_calls) == 0 and len(mentioned_filtered) > 0:
-                    ungrounded_list = sorted(mentioned_filtered)
-                    yield {"type": "grounding",
-                           "detail": f"Agent never consulted KG. Self-audit for {len(ungrounded_list)} concept(s).",
-                           "ungrounded": ungrounded_list}
-
-                    grounding_msg = GROUNDING_GATE_PROMPT.format(
-                        ungrounded_items="\n".join(f"  - {c}" for c in ungrounded_list)
-                    )
-                    messages.append({"role": "user", "content": grounding_msg})
-
-                    yield {"type": "phase", "phase": "grounding",
-                           "detail": f"KG grounding gate triggered (max {max_grounding_rounds} rounds)..."}
-
-                    for ground_round in range(max_grounding_rounds):
-                        response = client.chat.completions.create(
-                            model=model,
-                            messages=messages,
-                            tools=TOOLS if TOOLS else None,
-                        )
-                        choice = response.choices[0]
-                        messages.append(choice.message)
-
-                        if choice.message.tool_calls:
-                            yield {"type": "phase", "phase": "grounding",
-                                   "detail": f"Grounding round {ground_round + 1}: "
-                                             f"{len(choice.message.tool_calls)} tool call(s)"}
-                            for tc in choice.message.tool_calls:
-                                parsed_args, result = _execute_tool_raw(tc.function.name, tc.function.arguments)
-                                tool_log.append((tc.function.name, parsed_args))
-                                yield {"type": "tool_call", "name": tc.function.name, "args": parsed_args}
-                                yield {"type": "tool_result", "name": tc.function.name, "result": result}
-                                messages.append({
-                                    "role": "tool",
-                                    "tool_call_id": tc.id,
-                                    "content": result,
-                                })
-                        else:
-                            content = choice.message.content or ""
-                            yield {"type": "agent_text", "content": content}
-                            break
-                else:
-                    if len(kg_calls) > 0:
-                        kg_queried = _extract_kg_queried_concepts(tool_log)
-                        yield {"type": "phase", "phase": "grounding",
-                               "detail": f"Agent consulted KG for: {sorted(kg_queried)}. Gate not triggered."}
-                    else:
-                        yield {"type": "phase", "phase": "grounding",
-                               "detail": "No non-trivial concepts found. Gate not triggered."}
-            else:
-                yield {"type": "phase", "phase": "grounding",
-                       "detail": "KG unavailable, skipping."}
+    for attempt in range(total_attempts):
+        attempt_label = f" (attempt {attempt + 1}/{total_attempts})" if total_attempts > 1 else ""
 
         # ---------------------------------------------------------------
         # Phase 2: Structured output extraction
         # ---------------------------------------------------------------
-        total_kg = len([t for t in tool_log if t[0] in _KG_TOOL_NAMES])
-        total_pdk = len([t for t in tool_log if t[0] not in _KG_TOOL_NAMES])
-
-        yield {"type": "stats", "total": len(tool_log), "pdk": total_pdk, "kg": total_kg}
         yield {"type": "phase", "phase": "structuring",
                "detail": f"Producing structured DesignIntent{attempt_label}..."}
 
@@ -840,26 +1024,24 @@ def interpret_stream(
         # ---------------------------------------------------------------
         # Phase 3: Critic review
         # ---------------------------------------------------------------
-        # Skip critic on the very last attempt — accept whatever we have
         if attempt == total_attempts - 1:
             break
 
         yield {"type": "phase", "phase": "critic",
                "detail": f"Critic reviewing DesignIntent{attempt_label}..."}
 
-        # Run critic as a separate agentic conversation
         critic_verdict: Optional[CriticVerdict] = None
-        for critic_event in _run_critic(client, user_prompt, extracted, design_intent, model):
-            # Forward all critic events to the outer stream
+        for critic_event in _run_critic(
+            client, user_prompt, extracted, design_intent, model,
+            clarifications=clarifications,
+        ):
             if critic_event["type"] == "critic":
-                # Update the attempt number
                 critic_event["attempt"] = attempt + 1
                 critic_verdict_data = critic_event["verdict"]
                 critic_verdict = CriticVerdict(**critic_verdict_data)
             yield critic_event
 
         if critic_verdict is None:
-            # Critic didn't produce a verdict — accept current result
             break
 
         if critic_verdict.passed:
@@ -867,7 +1049,6 @@ def interpret_stream(
                    "detail": f"Critic PASSED: {critic_verdict.summary}"}
             break
 
-        # Critic failed — inject feedback into interpreter messages
         issues_text = "\n".join(
             f"  [{issue.severity.upper()}] {issue.description} "
             f"(affects: {', '.join(issue.affected_components) or 'global'})"
@@ -889,14 +1070,69 @@ def interpret_stream(
     # Yield final result
     # -------------------------------------------------------------------
     if design_intent is not None:
-        yield {"type": "done", "result": design_intent}
+        serializable_messages = _serialise_messages(messages)
+        yield {"type": "done", "result": design_intent, "messages": serializable_messages}
     else:
         yield {"type": "error", "message": "Agent loop ended without producing a DesignIntent"}
 
 
 # ---------------------------------------------------------------------------
-# Synchronous wrapper — consumes the stream, optionally prints
+# Backward-compatible wrappers
 # ---------------------------------------------------------------------------
+
+def interpret_stream(
+    user_prompt: str,
+    model: str = "o3-mini",
+    max_tool_rounds: int = 15,
+    max_grounding_rounds: int = 5,
+    max_critic_rounds: int = 2,
+) -> Generator[AgentEvent, None, None]:
+    """
+    Full streaming interpreter — runs all phases end-to-end (no user disambiguation pause).
+
+    Kept for backward compatibility and non-interactive use. Equivalent to calling
+    ``explore_and_ask()`` followed by ``finalize_stream()`` with no clarifications.
+
+    Event types:
+        {"type": "phase",       "phase": str, "detail": str}
+        {"type": "concepts",    "components": list[str], "parameters": list[str], "specs": list[str]}
+        {"type": "tool_call",   "name": str,  "args": dict}
+        {"type": "tool_result", "name": str,  "result": str}
+        {"type": "agent_text",  "content": str}
+        {"type": "grounding",   "detail": str, "ungrounded": list[str]}
+        {"type": "stats",       "total": int, "pdk": int, "kg": int}
+        {"type": "clarification", ...}
+        {"type": "critic",      "verdict": dict, "attempt": int}
+        {"type": "done",        "result": DesignIntent}
+        {"type": "error",       "message": str}
+    """
+    saved_state: Optional[dict] = None
+
+    for event in explore_and_ask(
+        user_prompt, model, max_tool_rounds, max_grounding_rounds,
+    ):
+        if event["type"] == "clarification":
+            saved_state = event
+        else:
+            yield event
+
+    if saved_state is None:
+        yield {"type": "error", "message": "explore_and_ask ended without producing clarification state"}
+        return
+
+    # Proceed directly to finalization — no user answers
+    for event in finalize_stream(
+        messages=saved_state["messages"],
+        tool_log=saved_state["tool_log"],
+        user_prompt=user_prompt,
+        extracted_dict=saved_state["extracted"],
+        model=model,
+        max_tool_rounds=max_tool_rounds,
+        max_critic_rounds=max_critic_rounds,
+        clarifications=None,
+    ):
+        yield event
+
 
 def interpret(
     user_prompt: str,
@@ -921,7 +1157,9 @@ def interpret(
         if verbose:
             if etype == "phase":
                 phase_label = {"extraction": "Phase 0", "exploration": "Phase 1",
-                               "grounding": "Phase 1.5", "structuring": "Phase 2",
+                               "grounding": "Phase 1.5", "disambiguation": "Phase 1.75",
+                               "clarification_update": "Phase 1.75+",
+                               "structuring": "Phase 2",
                                "critic": "Phase 3"}.get(event["phase"], event["phase"])
                 print(f"{phase_label}: {event['detail']}")
             elif etype == "concepts":
@@ -939,6 +1177,11 @@ def interpret(
                 print(f"  Grounding: {event['detail']}")
             elif etype == "stats":
                 print(f"  Total tool calls: {event['total']} ({event['pdk']} PDK, {event['kg']} KG)")
+            elif etype == "clarification":
+                req = event["request"]
+                n_q = len(req.get("questions", []))
+                rtp = req.get("ready_to_proceed", True)
+                print(f"  Disambiguation: {n_q} question(s), ready_to_proceed={rtp}")
             elif etype == "critic":
                 v = event["verdict"]
                 status = "PASSED" if v["passed"] else "FAILED"

@@ -1,7 +1,49 @@
-"""DesignIntent model — structured output contract for the interpreter agent."""
+"""DesignIntent and disambiguation models — structured output contracts for the interpreter agent."""
 
 from typing import Any, Optional
 from pydantic import BaseModel, Field
+
+
+# ---------------------------------------------------------------------------
+# Disambiguation models (Phase 1.75)
+# ---------------------------------------------------------------------------
+
+class ClarificationQuestion(BaseModel):
+    """A single question the agent wants the user to answer before structuring."""
+    question: str = Field(..., description="The question to ask the user")
+    context: str = Field(
+        ...,
+        description="Why this matters — what the agent found in tool results that raised the question",
+    )
+    options: list[str] = Field(
+        default_factory=list,
+        description="Suggested answer choices (empty list if open-ended)",
+    )
+    default: str = Field(
+        ...,
+        description="What the agent would assume if the user doesn't answer",
+    )
+    priority: str = Field(
+        ...,
+        description="'critical' (design blocked without answer) or 'helpful' (improves accuracy but has a reasonable default)",
+    )
+
+
+class ClarificationRequest(BaseModel):
+    """Structured set of clarification questions from the agent."""
+    questions: list[ClarificationQuestion] = Field(
+        default_factory=list,
+        description="Questions the agent wants answered",
+    )
+    ready_to_proceed: bool = Field(
+        ...,
+        description="True if no critical unknowns — agent can proceed with defaults",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Design intent models
+# ---------------------------------------------------------------------------
 
 class SpecEntry(BaseModel):
     """A single specification key-value pair."""
