@@ -89,6 +89,7 @@ from mcp_servers.pdk_catalog_server import (
     search_components,
     validate_port_config,
     get_component_details,
+    get_module_params,
 )
 
 try:
@@ -169,6 +170,28 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_module_params",
+            "description": (
+                "Get the default GDSFactory settings/parameters for a specific PDK component. "
+                "Returns all parameter names and their default values. Use after search_pdk "
+                "to understand what parameters a component accepts (e.g., arm_length, gap, "
+                "coupling_length) and their defaults."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "module_name": {
+                        "type": "string",
+                        "description": "Exact PDK module name, e.g. 'mzi_2x2_heater_tin_cband'",
+                    }
+                },
+                "required": ["module_name"],
+            },
+        },
+    },
 ]
 
 # Dispatch table: tool name -> callable
@@ -176,6 +199,7 @@ _TOOL_DISPATCH = {
     "search_pdk": lambda args: search_components(args["query"]),
     "validate_ports": lambda args: validate_port_config(args["component_query"], args["port_config"]),
     "get_component_info": lambda args: get_component_details(args["module_name"]),
+    "get_module_params": lambda args: get_module_params(args["module_name"]),
 }
 
 # -- KG tools (require Neo4j) -----------------------------------------------
@@ -289,19 +313,24 @@ if _KG_AVAILABLE:
 # ---------------------------------------------------------------------------
 
 AGENT_SYSTEM_PROMPT = """\
-You are an expert photonic circuit interpreter. Your task is to understand a user's 
-natural-language description of a photonic circuit and extract a structured DesignIntent.
+You are a photonic circuit interpreter. Your task is to understand a user's natural-language 
+description of a photonic circuit and extract a structured DesignIntent.
+
+FOUNDATIONAL PRINCIPLE: Your pretrained knowledge may be outdated, incomplete, or incorrect 
+for this specific PDK and domain. The PDK and Knowledge Graph are the ground truth. You MUST 
+verify every claim through tools. Do not assume you know what a component is, how it works, 
+or what port configurations it has — look it up.
 
 You have access to two categories of tools:
 
-**PDK tools** — the authoritative source for fabrication-specific details:
+**PDK tools** — the authoritative source for what can be fabricated:
   - search_pdk: find components by keyword. Returns module names, port configs, labels.
   - validate_ports: verify a specific port configuration against the PDK.
   - get_component_info: full technical details for a PDK module (ports, args, technology).
-  Use PDK tools to determine what components are available, their exact port configurations,
-  and their fabrication parameters. Port configs ONLY come from the PDK.
+  Every component in your output must be backed by a PDK search. Port configs, module names,
+  and fabrication parameters come ONLY from the PDK — never from your own knowledge.
 
-**Knowledge Graph (KG) tools** — foundational photonic domain knowledge:
+**Knowledge Graph (KG) tools** — the authoritative source for domain knowledge:
   - search_knowledge_graph: semantic search for photonic concepts (components, architectures,
     properties, physical principles).
   - resolve_function: given a design function (e.g. "modulation"), find which component types
@@ -310,48 +339,39 @@ You have access to two categories of tools:
     what physical principles it relies on, what properties it has.
   - get_component_properties: get all known properties, design functions, physical principles,
     and sub-components for a concept.
-  The KG contains conceptual/foundational knowledge — what a component IS, how it works, what
-  it's made of — NOT specific fabrication details like port configs or module names.
+  The KG defines what a component IS, how it works, and what it's made of. Consult the KG 
+  for every component and concept — do not rely on your training data for domain knowledge.
 
 WORKFLOW:
 1. Read the user's prompt. Identify every distinct component, connection, and specification.
-2. For each component type:
+2. For EVERY component type mentioned or implied:
    a. Search the PDK to check if a matching fabrication component exists and confirm port
       configs and available parameters.
-   b. If you are UNSURE about what a component or concept is, how it works, or what it's
-      made of — consult the KG. For example:
-        - You encounter "VOA" and aren't sure how it's typically implemented → check KG.
-        - User says "arrayed waveguide grating" and you're unsure of its architecture → check KG.
-        - User mentions a function like "wavelength demultiplexing" and you need to know what
-          components can do it → use resolve_function.
-      You do NOT need to consult the KG for well-understood, common components where you are
-      confident in your domain knowledge (e.g. a basic beamsplitter, a straight waveguide).
+   b. Consult the KG to verify your understanding of the component — what it is, how it 
+      works, what sub-components or principles it involves. Use get_component_properties 
+      or search_knowledge_graph for this. Do this for every component, not just unfamiliar
+      ones. Examples:
+        - User mentions "VOA" → check KG for typical implementations.
+        - User says "arrayed waveguide grating" → check KG for its architecture.
+        - User mentions a function like "wavelength demultiplexing" → use resolve_function
+          to discover which components can perform it.
 3. ARCHITECTURAL DECOMPOSITION — only when needed:
    a. For each component the user described, FIRST check whether the PDK has a monolithic
       component that directly satisfies the full description. Search with specific terms
-      that capture the complete device (e.g. "MZI with heater", "ring resonator modulator",
-      "balanced photodetector"). If a good PDK match exists, USE IT — this is preferred.
-   b. Only if no suitable monolithic PDK component exists, consider whether the user's
-      described component is a composite architecture that must be built from sub-components.
-      Many photonic devices the user names are actually composite structures. For example:
-        - "MZI with PIN-diodes in each arm" → if no monolithic PDK match, decompose into:
-          splitter (MMI/coupler) + two waveguide arms (each containing a PIN-diode) + a
-          combiner (MMI/coupler). The PIN-diodes are EMBEDDED within the MZI arms, not
-          connected externally.
-        - "Ring resonator filter" → if no monolithic match, may require a bus waveguide +
-          directional coupler + ring loop.
-        - "Balanced photodetector" → if no monolithic match, a 2x2 coupler feeding two
-          photodiodes with differential output.
-   c. Use get_concept_neighborhood or get_component_properties from the KG to discover the
-      sub-components of a complex architecture if you are not sure how to decompose it.
-   d. After decomposition, search the PDK for EACH sub-component to verify availability and
+      that capture the complete device (e.g. "MZI with heater", "ring resonator modulator").
+      If a good PDK match exists, USE IT — this is always preferred.
+   b. Only if no suitable monolithic PDK component exists, decompose the user's described
+      component into sub-components. Use get_concept_neighborhood or get_component_properties 
+      from the KG to discover the correct decomposition — do NOT guess the sub-component 
+      breakdown from general knowledge.
+   c. After decomposition, search the PDK for EACH sub-component to verify availability and
       get port configs.
-   e. The goal is a FABRICABLE design: every component in the final output must either be a
-      monolithic PDK component or be decomposed into parts the PDK can build. Anything else
+   d. The goal is a FABRICABLE design: every component in the final output must either be a
+      monolithic PDK component or be decomposed into PDK-available parts. Anything else
       must be flagged as an ambiguity.
-   f. When decomposing, preserve the user's intent — if the user said "MZI", the title/summary
+   e. When decomposing, preserve the user's intent — if the user said "MZI", the title/summary
       should still reference "MZI" but the components list should contain the actual sub-
-      components that form it, with connections showing the MZI topology.
+      components that form it, with connections showing the internal topology.
 4. If anything is ambiguous — implementation choice, connection topology, missing specs —
    note it explicitly as an ambiguity. If there are multiple valid decompositions, note
    which one you chose and why.
@@ -359,39 +379,41 @@ WORKFLOW:
 CRITICAL RULES:
 - Port configurations come ONLY from the PDK. Do NOT guess port configs — verify with
   validate_ports or get_component_info.
-- If you are uncertain about a photonic concept, ALWAYS consult the KG rather than guessing.
-  Be honest with yourself about what you know vs. what you're assuming.
+- Domain knowledge comes from the KG. Do NOT rely on your training data for how components
+  work, what they're made of, or how to decompose them — verify with KG tools.
+- Any claim about a component that is not backed by a tool result from this conversation
+  must be flagged as an ambiguity.
 - Each physical instance gets its own id (C1, C2, ...). "Two modulators" → C1 and C2.
 - When decomposing a composite architecture, each sub-component gets its own id and the
-  connections between them must reflect the internal topology (e.g. splitter → arm1, 
-  splitter → arm2, arm1 → combiner, arm2 → combiner).
+  connections between them must reflect the internal topology.
 - Track confidence per component:
-    1.0 = verified against PDK, concept well-understood
-    0.7 = verified against PDK but concept was ambiguous, OR concept clear but no PDK match
-    0.4 = unverified guess
+    1.0 = PDK match confirmed AND KG-verified understanding
+    0.7 = PDK match confirmed but KG not consulted, OR KG-verified but weak/no PDK match
+    0.4 = neither PDK nor KG verification performed
 
-When you are satisfied, say DONE and summarize your findings including what you verified,
-any decompositions you performed, and any remaining ambiguities. Do NOT output the 
-DesignIntent JSON yourself.
+When you are satisfied, say DONE and summarize your findings including what you verified 
+(citing tool results), any decompositions you performed (citing KG results), and any 
+remaining ambiguities. Do NOT output the DesignIntent JSON yourself.
 """
 
 GROUNDING_GATE_PROMPT = """\
-UNCERTAINTY CHECK: You mentioned the following concepts but did not consult the Knowledge 
-Graph for any of them, and you also did not make any KG queries during your analysis:
+GROUNDING REQUIRED: You mentioned the following concepts but did not consult the Knowledge 
+Graph for any of them:
 
 {ungrounded_items}
 
-Are you confident you fully understand each of these concepts — what they are, how they 
-work, and what they're made of? If there is ANY uncertainty, use get_component_properties 
-or get_concept_neighborhood to look them up now.
-
-If you are genuinely confident about all of them from your domain expertise, you may say so
-and skip the lookups. But be honest — if you're making assumptions, check the KG.
+Every component and concept must be verified against the KG — your training data is not a 
+reliable substitute. Use get_component_properties or get_concept_neighborhood to look up 
+each of the above concepts now. This is not optional.
 """
 
 STRUCTURING_PROMPT = """\
 Based on the preceding conversation — the user's original prompt, all PDK search results,
-and any Knowledge Graph results — produce the final DesignIntent.
+and all Knowledge Graph results — produce the final DesignIntent.
+
+IMPORTANT: Only include information that is backed by tool results from this conversation.
+Any claim about a component, port config, or architecture that was NOT verified by a PDK 
+or KG tool call must be flagged as an ambiguity.
 
 Rules:
 - Each physical instance gets a unique id (C1, C2, ...).
@@ -407,22 +429,24 @@ Rules:
   "MZI connected to diode". The description field should note which higher-level architecture
   the sub-component belongs to (e.g. "1x2 MMI splitter — input coupler of MZI").
 - confidence scoring:
-    1.0 = verified against PDK and concept well-understood (either from your expertise or KG)
-    0.7 = PDK match found but concept was ambiguous, OR concept clear but weak PDK match
-    0.4 = unverified — no PDK match and concept uncertain
+    1.0 = PDK match confirmed AND understanding verified by KG
+    0.7 = PDK match confirmed but KG not consulted, OR KG-verified but weak/no PDK match
+    0.4 = neither PDK nor KG verification — flag as ambiguity
 - source_span: verbatim substring from the user's original input.
-- ambiguities: list anything you assumed or couldn't resolve.
-  If you were uncertain about a concept and the KG clarified it, note what you learned.
+- ambiguities: list anything you assumed or couldn't verify through tools.
   If the KG revealed multiple possible implementations, note that as an ambiguity.
+  If a component description relies on your own knowledge rather than tool results, note it.
 """
 
 CRITIC_SYSTEM_PROMPT = """\
 You are a rigorous critic reviewing a photonic circuit DesignIntent that was extracted from 
 a user's natural-language prompt. Your job is to verify that the DesignIntent **faithfully 
-and completely** captures what the user asked for.
+and completely** captures what the user asked for, and that claims are grounded in tool 
+results rather than assumptions.
 
 You have access to the same PDK and Knowledge Graph tools as the interpreter. Use them to 
-independently verify claims if needed — do NOT trust the interpreter's work blindly.
+independently verify claims — do NOT trust the interpreter's work blindly. Your tool calls 
+are the source of truth.
 
 You will be given:
 1. The original user prompt
@@ -448,9 +472,20 @@ Check the following:
   hallucinations. They are valid design requirements even if not in the original prompt.
 
 **PDK accuracy**
-- Port configs are only set when they can be verified against the PDK. If in doubt, use 
-  validate_ports or get_component_info to check.
+- Port configs are only set when they can be verified against the PDK. Use validate_ports 
+  or get_component_info to independently check every port_config in the DesignIntent.
 - If a port_config is set, verify it exists in the PDK for that component type.
+- Every component should have been searched in the PDK. If a component description seems
+  to reference a PDK module, verify the module actually exists.
+
+**Tool grounding**
+- For each component in the DesignIntent, check whether its description and properties are 
+  consistent with what the PDK and KG actually report. Use search_pdk and 
+  get_component_properties to spot-check at least the most critical components.
+- If a component has confidence 1.0, verify that the claim is justified — it should have 
+  both a PDK match and KG-verified understanding. If you cannot confirm this, flag it.
+- Any component whose description appears to rely on general knowledge rather than tool 
+  results should be flagged as a minor issue ("ungrounded claim").
 
 **Connection topology**
 - Connections make physical sense for the described circuit.
@@ -470,30 +505,30 @@ Check the following:
        when available — do NOT penalize the interpreter for using a single component
        that genuinely matches.
     2. Properly decomposed it into fabricable sub-components with correct internal
-       topology (e.g. splitter → arm → combiner for an MZI) when no single PDK
-       component covers the full description.
+       topology. Use get_concept_neighborhood to independently verify that the 
+       decomposition is architecturally correct — do not trust the interpreter's 
+       decomposition at face value.
 - Only flag a decomposition issue if the interpreter did NEITHER: i.e. it listed
   a high-level component name that has no direct PDK match AND did not break it down
   into buildable sub-components.
-- When verifying, use get_concept_neighborhood to check whether the sub-component
-  breakdown is architecturally correct.
 - The connections between sub-components must reflect the actual internal topology,
   not just surface-level "A connected to B".
 
 WORKFLOW:
-1. Read the user prompt and extracted concepts carefully.
+1. Read the user prompt, extracted concepts, and any user clarifications carefully.
 2. Compare against the DesignIntent systematically.
-3. If anything looks suspicious, use your tools to independently verify.
+3. Independently verify using your tools — check at least: every port_config, every 
+   decomposition, and any component with confidence >= 0.7.
 4. Produce your verdict.
 
 For each issue found, classify severity:
-- **major**: Missing component, wrong topology, hallucinated element, incorrect port config.
-  These require the interpreter to re-explore with tools.
-- **minor**: Slightly imprecise description, missing an ambiguity note, minor spec placement.
-  These can be fixed in re-structuring.
+- **major**: Missing component, wrong topology, hallucinated element, incorrect port config, 
+  unverified decomposition. These require the interpreter to re-explore with tools.
+- **minor**: Slightly imprecise description, missing an ambiguity note, minor spec placement,
+  ungrounded but plausible claim. These can be fixed in re-structuring.
 
-Be thorough but fair. If the DesignIntent is reasonable and captures the user's intent 
-correctly, pass it. Do not nitpick stylistic choices.
+Be thorough but fair. If the DesignIntent is reasonable, well-grounded in tool results, and 
+captures the user's intent correctly, pass it. Do not nitpick stylistic choices.
 
 When you are done analyzing, say VERDICT and state your conclusion. Do NOT output the 
 CriticVerdict JSON yourself.
@@ -527,9 +562,9 @@ For each question:
   fundamental topology choice), or "helpful" if you can make a reasonable default 
   but the user might want to override it.
 
-If you have no questions and are fully confident, set ready_to_proceed to True 
-with an empty questions list. Do not invent questions just to seem thorough — only 
-ask if there is genuine uncertainty informed by your tool results.
+If your tool results leave no open questions and all components are well-characterized, 
+set ready_to_proceed to True with an empty questions list. Do not invent questions just 
+to seem thorough — only ask if there is genuine uncertainty informed by your tool results.
 """
 
 CLARIFICATION_INJECTION_PROMPT = """\
@@ -540,6 +575,21 @@ The user has provided the following clarifications:
 Update your analysis to incorporate these answers. If any clarification changes which 
 PDK component you should use or how the circuit should be structured, verify with the 
 appropriate tools now. When done, say DONE with your updated findings.
+"""
+
+UPSTREAM_FEEDBACK_PROMPT = """\
+DOWNSTREAM VALIDATION FEEDBACK
+===============================
+A later stage in the pipeline attempted to build your DesignIntent into a
+fabricable circuit and encountered problems. These are NOT hypothetical — they
+are concrete failures from PDK validation and schematic construction.
+
+{feedback_items}
+
+You MUST address these problems using your tools. They indicate that your
+DesignIntent needs revision — either different components, different decomposition,
+or different connections. Re-investigate with search_pdk and the knowledge graph,
+then say DONE when you have enough information to produce a corrected DesignIntent.
 """
 
 
@@ -722,6 +772,7 @@ def explore_and_ask(
     model: str = "o3-mini",
     max_tool_rounds: int = 15,
     max_grounding_rounds: int = 5,
+    upstream_feedback: Optional[list[dict]] = None,
 ) -> Generator[AgentEvent, None, None]:
     """
     Run Phases 0 → 1 → 1.5 → 1.75 (disambiguation).
@@ -741,6 +792,21 @@ def explore_and_ask(
         {"role": "system", "content": AGENT_SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt},
     ]
+
+    # Inject upstream feedback if this is a retry from downstream validation
+    if upstream_feedback:
+        items = "\n".join(
+            f"  [{f.get('severity', '?').upper()}] {f.get('description', '')}\n"
+            f"    Affects: {', '.join(f.get('affected_components', []))}\n"
+            f"    Suggested: {f.get('suggested_action', '')}"
+            for f in upstream_feedback
+        )
+        messages.append({
+            "role": "user",
+            "content": UPSTREAM_FEEDBACK_PROMPT.format(feedback_items=items),
+        })
+        yield {"type": "phase", "phase": "upstream_feedback",
+               "detail": f"Injecting {len(upstream_feedback)} feedback item(s) from downstream"}
 
     # -------------------------------------------------------------------
     # Phase 0: LLM concept extraction from user prompt
@@ -924,6 +990,7 @@ def finalize_stream(
     max_tool_rounds: int = 10,
     max_critic_rounds: int = 2,
     clarifications: Optional[dict[str, str]] = None,
+    upstream_feedback: Optional[str] = None,
 ) -> Generator[AgentEvent, None, None]:
     """
     Run Phases 2 → 3 (with optional clarification injection + re-exploration).
@@ -941,6 +1008,9 @@ def finalize_stream(
     clarifications : dict, optional
         ``{ambiguity_question: user_answer}`` pairs from the disambiguation form.
         If provided, injected before Phase 2.
+    upstream_feedback : str, optional
+        Free-text feedback from downstream (e.g. schematic review gate).
+        If provided, injected as a user message before clarifications.
 
     Event types (same as explore_and_ask plus):
         {"type": "done", "result": DesignIntent, "messages": list}
@@ -948,6 +1018,14 @@ def finalize_stream(
     """
     client = OpenAI()
     extracted = ExtractedConcepts(**extracted_dict)
+
+    # -------------------------------------------------------------------
+    # Inject upstream/schematic feedback (if any)
+    # -------------------------------------------------------------------
+    if upstream_feedback:
+        messages.append({"role": "user", "content": upstream_feedback})
+        yield {"type": "phase", "phase": "upstream_feedback",
+               "detail": "Injecting user schematic feedback for revision"}
 
     # -------------------------------------------------------------------
     # Inject user clarifications (if any) + brief re-exploration

@@ -11,11 +11,18 @@ Run with:
     streamlit run mcp_servers/streamlit_app.py
 """
 
+import base64
 import json
 import pandas as pd
 import streamlit as st
 
 from mcp_servers.interpreter_agent import explore_and_ask, finalize_stream
+from mcp_servers.pipeline_orchestrator import (
+    run_pipeline_finalize,
+    run_pipeline_with_feedback,
+    run_layout_simulation,
+)
+from mcp_servers.pdk_catalog_server import get_port_names
 from mcp_servers.models import DesignIntent
 
 # ---------------------------------------------------------------------------
@@ -86,27 +93,64 @@ run_btn = st.button("Interpret", type="primary", disabled=not prompt.strip())
 # Session state initialisation
 # ---------------------------------------------------------------------------
 _DEFAULTS = {
-    "stage": "initial",          # initial | exploring | disambiguating | finalizing | done
+    "stage": "initial",          # initial | exploring | disambiguating | finalizing
+                                 # | reviewing | patching | simulating | done
     "design_intent": None,
     "dot_string": None,
+    "preschematic_dot": None,
     "run_log": [],
-    "explore_state": None,       # saved state from explore_and_ask (messages, tool_log, etc.)
-    "clarification_req": None,   # ClarificationRequest dict
+    "explore_state": None,
+    "clarification_req": None,
     "user_prompt": "",
+    "component_selection": None,
+    "circuit_dsl": None,
+    "gf_netlist_yaml": None,
+    "final_dot": None,
+    "pipeline_finalize": False,
+    # Layout + Simulation (Phase 8)
+    "gds_fig_b64": None,
+    "sax_fig_b64": None,
+    "s_params_json": None,
+    "gds_file_path": None,
+    "schematic_feedback": None,
+    # Intermediate state for tiered feedback
+    "footprints": None,
+    "positions": None,
+    "_edge_patches": None,
 }
 for key, default in _DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = default
 
-# Phase labels for display
+# Phase labels for display — grouped by pipeline stage
 PHASE_LABELS = {
-    "extraction": ("0", "Concept Extraction"),
-    "exploration": ("1", "Agentic Exploration"),
-    "grounding": ("1.5", "KG Grounding Gate"),
-    "disambiguation": ("1.75", "Disambiguation"),
-    "clarification_update": ("1.75+", "Clarification Update"),
-    "structuring": ("2", "Structured Output"),
-    "critic": ("3", "Critic Review"),
+    # Interpreter
+    "extraction":           "Concept Extraction",
+    "exploration":          "Agentic Exploration",
+    "grounding":            "KG Grounding Gate",
+    "disambiguation":       "Disambiguation",
+    "clarification_update": "Clarification Update",
+    "upstream_feedback":    "Upstream Feedback",
+    "structuring":          "Structured Output",
+    "critic":               "Critic Review",
+    # Component Selection
+    "component_selection":  "Component Selection",
+    "compliance_check":     "Compliance Check",
+    # Schematic Building
+    "schematic_building":   "Schematic Building",
+    "edge_routing":         "Edge Routing",
+    "layout":               "Layout Computation",
+    "export":               "Export",
+    # Tiered Feedback
+    "feedback_classification": "Feedback Classification",
+    "edge_patching":           "Edge Patching",
+    "component_reselection":   "Component Re-selection",
+    # Layout + Simulation
+    "layout_gds":           "GDS Layout Generation",
+    "simulation":           "Circuit Simulation (SAX)",
+    "gds_export":           "GDS File Export",
+    # Generic fallback
+    "pipeline_phase":       "Pipeline",
 }
 
 
@@ -120,8 +164,8 @@ def _render_events(event_stream, status_widget):
         st.session_state.run_log.append(event)
 
         if etype == "phase":
-            num, label = PHASE_LABELS.get(event["phase"], ("?", event["phase"]))
-            st.write(f"**Phase {num} — {label}:** {event['detail']}")
+            label = PHASE_LABELS.get(event["phase"], event["phase"])
+            st.write(f"**{label}:** {event['detail']}")
 
         elif etype == "concepts":
             components = event["components"]
@@ -207,10 +251,80 @@ def _render_events(event_stream, status_widget):
             di: DesignIntent = event["result"]
             st.session_state.design_intent = di
             st.session_state.dot_string = di.to_dot()
+            st.session_state.preschematic_dot = st.session_state.dot_string
+            if st.session_state.get("pipeline_finalize"):
+                status_widget.update(
+                    label="Interpreter done — continuing pipeline...",
+                    state="running",
+                    expanded=True,
+                )
+            else:
+                st.session_state.stage = "done"
+                status_widget.update(
+                    label=f"Done — {len(di.components)} components, "
+                          f"{len(di.connections)} connections",
+                    state="complete",
+                    expanded=False,
+                )
+
+        elif etype == "pipeline_phase":
+            phase = event.get("phase", "?")
+            label = PHASE_LABELS.get(phase, phase)
+            st.write(f"**{label}**")
+
+        elif etype == "selection_done":
+            st.session_state.component_selection = event.get("selection")
+            n = len(event.get("selection", {}).get("mappings", []))
+            st.write(f"**Component selection:** {n} mapping(s)")
+
+        elif etype == "dot_draft":
+            st.write("**DOT draft** (nodes with ports) generated.")
+
+        elif etype == "edge_routing_done":
+            st.write("**Edges routed** (port-level).")
+
+        elif etype == "layout_done":
+            n = len(event.get("positions", {}))
+            st.write(f"**Layout computed** for {n} node(s).")
+
+        elif etype == "feedback":
+            issues = event.get("issues", [])
+            st.warning(f"**Validation feedback:** {len(issues)} issue(s)")
+            for iss in issues:
+                affected = ", ".join(iss.get("affected_components", [])) or "global"
+                st.markdown(f"  - [{iss.get('severity', '?')}] {iss.get('description', '')} — _Affects: {affected}_")
+
+        elif etype == "pipeline_done":
+            result = event.get("result", {})
+            st.session_state.component_selection = result.get("selection")
+            st.session_state.circuit_dsl = result.get("circuit_dsl")
+            st.session_state.gf_netlist_yaml = result.get("gf_netlist_yaml")
+            st.session_state.final_dot = result.get("dot_string")
+            st.session_state.footprints = result.get("footprints")
+            st.session_state.positions = result.get("positions")
+            if result.get("dot_string"):
+                st.session_state.dot_string = result["dot_string"]
+            st.session_state.stage = "reviewing"
+            st.session_state.pipeline_finalize = False
+            status_widget.update(
+                label="Schematic ready for review",
+                state="complete",
+                expanded=False,
+            )
+
+        elif etype == "gds_rendered":
+            routing = "with" if event.get("routing_ok") else "without"
+            st.write(f"**GDS layout rendered** ({routing} optical routing).")
+
+        elif etype == "layout_sim_done":
+            result = event.get("result", {})
+            st.session_state.gds_fig_b64 = result.get("gds_fig_b64")
+            st.session_state.sax_fig_b64 = result.get("sax_fig_b64")
+            st.session_state.s_params_json = result.get("s_params")
+            st.session_state.gds_file_path = result.get("gds_file_path")
             st.session_state.stage = "done"
             status_widget.update(
-                label=f"Done — {len(di.components)} components, "
-                      f"{len(di.connections)} connections",
+                label="Layout and simulation complete",
                 state="complete",
                 expanded=False,
             )
@@ -218,6 +332,8 @@ def _render_events(event_stream, status_widget):
         elif etype == "error":
             st.error(event["message"])
             status_widget.update(label="Failed", state="error")
+            if st.session_state.get("pipeline_finalize"):
+                st.session_state.pipeline_finalize = False
 
 
 # ---------------------------------------------------------------------------
@@ -285,19 +401,18 @@ if st.session_state.stage == "disambiguating":
                     st.markdown(f"**{q['question']}**")
                     st.caption(f"Context: {q['context']}")
                     if q.get("options"):
-                        options_list = ["(use agent default)"] + q["options"] + ["(custom...)"]
+                        options_list = ["(use agent default)"] + q["options"]
                         choice = st.selectbox(
                             "Your answer",
                             options=options_list,
                             key=f"crit_{i}",
                         )
-                        if choice == "(custom...)":
-                            custom = st.text_input(
-                                "Enter custom answer",
-                                key=f"crit_{i}_custom",
-                            )
-                            if custom.strip():
-                                answers[q["question"]] = custom.strip()
+                        custom = st.text_input(
+                            "Or enter a custom answer (overrides dropdown if non-empty)",
+                            key=f"crit_{i}_custom",
+                        )
+                        if custom.strip():
+                            answers[q["question"]] = custom.strip()
                         elif choice != "(use agent default)":
                             answers[q["question"]] = choice
                     else:
@@ -316,19 +431,18 @@ if st.session_state.stage == "disambiguating":
                     st.markdown(f"**{q['question']}**")
                     st.caption(f"Context: {q['context']}")
                     if q.get("options"):
-                        options_list = ["(use agent default)"] + q["options"] + ["(custom...)"]
+                        options_list = ["(use agent default)"] + q["options"]
                         choice = st.selectbox(
                             "Your answer",
                             options=options_list,
                             key=f"help_{i}",
                         )
-                        if choice == "(custom...)":
-                            custom = st.text_input(
-                                "Enter custom answer",
-                                key=f"help_{i}_custom",
-                            )
-                            if custom.strip():
-                                answers[q["question"]] = custom.strip()
+                        custom = st.text_input(
+                            "Or enter a custom answer (overrides dropdown if non-empty)",
+                            key=f"help_{i}_custom",
+                        )
+                        if custom.strip():
+                            answers[q["question"]] = custom.strip()
                         elif choice != "(use agent default)":
                             answers[q["question"]] = choice
                     else:
@@ -357,7 +471,7 @@ if st.session_state.stage == "disambiguating":
         st.rerun()
 
 # ---------------------------------------------------------------------------
-# Stage: FINALIZING — run Phases 2 → 3
+# Stage: FINALIZING — run Phases 2 → 7 (interpreter + component selection + schematic)
 # ---------------------------------------------------------------------------
 if st.session_state.stage == "finalizing":
     st.markdown("---")
@@ -370,20 +484,217 @@ if st.session_state.stage == "finalizing":
         label += f" (with {len(clarifications)} clarification(s))"
     label += "..."
 
+    st.session_state.pipeline_finalize = True
     with st.status(label, expanded=True) as status_widget:
         _render_events(
-            finalize_stream(
-                messages=explore_state["messages"],
-                tool_log=explore_state["tool_log"],
+            run_pipeline_finalize(
+                explore_state=explore_state,
                 user_prompt=st.session_state.user_prompt,
-                extracted_dict=explore_state["extracted"],
                 model=model,
+                clarifications=clarifications,
                 max_tool_rounds=max_rounds,
                 max_critic_rounds=max_critic,
-                clarifications=clarifications,
             ),
             status_widget,
         )
+
+    if st.session_state.stage == "reviewing":
+        st.rerun()
+
+# ---------------------------------------------------------------------------
+# Stage: REVIEWING — user approves schematic or requests changes
+# ---------------------------------------------------------------------------
+if st.session_state.stage == "reviewing":
+    st.markdown("---")
+    st.header("Schematic Review")
+    st.info("Review the generated schematic below. You can approve it to proceed "
+            "to GDS layout and simulation, or request changes. "
+            "Minor edits (e.g. rewiring a connection) will be applied surgically "
+            "without re-running the full pipeline.")
+
+    schematic_dot = st.session_state.get("final_dot")
+    if schematic_dot:
+        try:
+            st.graphviz_chart(schematic_dot, use_container_width=True)
+        except Exception as e:
+            st.error(f"Graphviz rendering failed: {e}")
+            st.code(schematic_dot, language="dot")
+
+    sel = st.session_state.get("component_selection")
+    if sel:
+        mappings = sel.get("mappings", [])
+        if mappings:
+            st.subheader("Component Mappings")
+            map_rows = [
+                {
+                    "Component ID": m.get("component_id", ""),
+                    "PDK Module": m.get("pdk_module", ""),
+                    "Match Quality": m.get("match_quality", ""),
+                    "Port Config": m.get("port_config", ""),
+                }
+                for m in mappings
+            ]
+            st.dataframe(pd.DataFrame(map_rows), use_container_width=True, hide_index=True)
+
+    gf_yaml = st.session_state.get("gf_netlist_yaml")
+    if gf_yaml:
+        with st.expander("GDSFactory Netlist (YAML)", expanded=False):
+            st.code(gf_yaml, language="yaml")
+
+    st.markdown("---")
+
+    if st.button("Approve and run Layout + Simulation", type="primary"):
+        st.session_state.schematic_feedback = None
+        st.session_state.stage = "simulating"
+        st.rerun()
+
+    # -- Structured edge-edit form --
+    _sel = st.session_state.get("component_selection") or {}
+    _mappings = _sel.get("mappings", [])
+    _node_ids = [m.get("component_id", "") for m in _mappings]
+    _port_map: dict[str, list[str]] = {}
+    for m in _mappings:
+        _port_map[m.get("component_id", "")] = get_port_names(m.get("pdk_module", ""))
+
+    if _node_ids:
+        with st.expander("Quick edge edit", expanded=False):
+            st.caption("Add or remove a single port-to-port connection without "
+                       "re-running the full pipeline.")
+            edge_col1, edge_col2 = st.columns(2)
+            with edge_col1:
+                edge_action = st.selectbox(
+                    "Action", ["add", "remove"], key="edge_action",
+                )
+                src_node = st.selectbox(
+                    "Source node", _node_ids, key="edge_src_node",
+                )
+                src_ports = _port_map.get(src_node, [])
+                src_port = st.selectbox(
+                    "Source port", src_ports if src_ports else ["(no ports)"],
+                    key="edge_src_port",
+                )
+            with edge_col2:
+                st.markdown("")  # spacer
+                st.markdown("")
+                tgt_node = st.selectbox(
+                    "Target node", _node_ids, key="edge_tgt_node",
+                )
+                tgt_ports = _port_map.get(tgt_node, [])
+                tgt_port = st.selectbox(
+                    "Target port", tgt_ports if tgt_ports else ["(no ports)"],
+                    key="edge_tgt_port",
+                )
+
+            if st.button("Apply edge edit"):
+                if src_port == "(no ports)" or tgt_port == "(no ports)":
+                    st.warning("Port information not available for selected component.")
+                else:
+                    from mcp_servers.models import EdgePatch
+                    patch = EdgePatch(
+                        action=edge_action,
+                        src_node=src_node,
+                        src_port=src_port,
+                        tgt_node=tgt_node,
+                        tgt_port=tgt_port,
+                    )
+                    st.session_state.schematic_feedback = None
+                    st.session_state._edge_patches = [patch.model_dump()]
+                    st.session_state.stage = "patching"
+                    st.rerun()
+
+    # -- Free-text feedback (auto-classified into tiers) --
+    st.markdown("**Or describe changes in natural language:**")
+    feedback_text = st.text_area(
+        "Request changes (describe what to fix):",
+        height=120,
+        key="review_feedback_text",
+    )
+    if st.button("Submit feedback"):
+        if feedback_text.strip():
+            st.session_state.schematic_feedback = feedback_text.strip()
+            st.session_state._edge_patches = None
+            st.session_state.stage = "patching"
+            st.rerun()
+        else:
+            st.warning("Please enter feedback before submitting.")
+
+# ---------------------------------------------------------------------------
+# Stage: PATCHING — tiered feedback (edge patch / component swap / full re-run)
+# ---------------------------------------------------------------------------
+if st.session_state.stage == "patching":
+    st.markdown("---")
+
+    edge_patches_raw = st.session_state.get("_edge_patches")
+    feedback_text = st.session_state.get("schematic_feedback")
+
+    if edge_patches_raw:
+        from mcp_servers.models import EdgePatch
+        patches = [EdgePatch(**p) for p in edge_patches_raw]
+        label = f"Applying {len(patches)} edge edit(s)..."
+        with st.status(label, expanded=True) as status_widget:
+            from mcp_servers.pipeline_orchestrator import run_pipeline_patch_edges
+            _render_events(
+                run_pipeline_patch_edges(
+                    circuit_dsl=st.session_state.circuit_dsl,
+                    selection_dict=st.session_state.component_selection,
+                    design_intent_dict=st.session_state.design_intent.model_dump()
+                        if hasattr(st.session_state.design_intent, "model_dump")
+                        else st.session_state.design_intent.full(),
+                    dot_string=st.session_state.final_dot,
+                    footprints=st.session_state.footprints or {},
+                    edge_patches=patches,
+                ),
+                status_widget,
+            )
+        st.session_state._edge_patches = None
+    elif feedback_text:
+        label = "Classifying feedback and applying changes..."
+        di = st.session_state.design_intent
+        di_dict = di.model_dump() if hasattr(di, "model_dump") else di.full()
+        with st.status(label, expanded=True) as status_widget:
+            _render_events(
+                run_pipeline_with_feedback(
+                    feedback_text=feedback_text,
+                    circuit_dsl=st.session_state.circuit_dsl,
+                    selection_dict=st.session_state.component_selection,
+                    design_intent_dict=di_dict,
+                    dot_string=st.session_state.final_dot or "",
+                    footprints=st.session_state.footprints or {},
+                    explore_state=st.session_state.explore_state,
+                    user_prompt=st.session_state.user_prompt,
+                    model=model,
+                    clarifications=st.session_state.get("clarifications"),
+                    max_tool_rounds=max_rounds,
+                    max_critic_rounds=max_critic,
+                ),
+                status_widget,
+            )
+        st.session_state.schematic_feedback = None
+    else:
+        st.warning("No feedback to process.")
+        st.session_state.stage = "reviewing"
+
+    if st.session_state.stage == "reviewing":
+        st.rerun()
+
+# ---------------------------------------------------------------------------
+# Stage: SIMULATING — run Phase 8 (GDS layout + SAX simulation)
+# ---------------------------------------------------------------------------
+if st.session_state.stage == "simulating":
+    st.markdown("---")
+    gf_yaml = st.session_state.get("gf_netlist_yaml")
+    if not gf_yaml:
+        st.error("No GDSFactory netlist available for simulation.")
+        st.session_state.stage = "done"
+    else:
+        with st.status("Running layout and simulation...", expanded=True) as status_widget:
+            _render_events(
+                run_layout_simulation(gf_netlist_yaml=gf_yaml),
+                status_widget,
+            )
+
+    if st.session_state.stage == "done":
+        st.rerun()
 
 # ---------------------------------------------------------------------------
 # Display results (stage == "done")
@@ -416,12 +727,15 @@ if di is not None:
 
     with col_graph:
         st.subheader("Preschematic")
-        dot_str = st.session_state.dot_string
-        try:
-            st.graphviz_chart(dot_str, use_container_width=True)
-        except Exception as e:
-            st.error(f"Graphviz rendering failed: {e}")
-            st.code(dot_str, language="dot")
+        preschematic = st.session_state.preschematic_dot or st.session_state.dot_string
+        if preschematic:
+            try:
+                st.graphviz_chart(preschematic, use_container_width=True)
+            except Exception as e:
+                st.error(f"Graphviz rendering failed: {e}")
+                st.code(preschematic, language="dot")
+        else:
+            st.caption("No preschematic available.")
 
     if di.connections:
         st.subheader("Connections")
@@ -439,6 +753,101 @@ if di is not None:
         st.subheader("Remaining Ambiguities")
         for amb in di.ambiguities:
             st.markdown(f"- {amb}")
+
+    selection = st.session_state.get("component_selection")
+    if selection is not None:
+        st.markdown("---")
+        st.subheader("Component Mappings")
+        mappings = selection.get("mappings", [])
+        if mappings:
+            map_rows = [
+                {
+                    "Component ID": m.get("component_id", ""),
+                    "PDK Module": m.get("pdk_module", ""),
+                    "Match Quality": m.get("match_quality", ""),
+                    "Port Config": m.get("port_config", ""),
+                }
+                for m in mappings
+            ]
+            st.dataframe(pd.DataFrame(map_rows), use_container_width=True, hide_index=True)
+        else:
+            st.caption("No mappings.")
+
+        st.subheader("Circuit Schematic")
+        schematic_dot = st.session_state.get("final_dot")
+        if schematic_dot:
+            try:
+                st.graphviz_chart(schematic_dot, use_container_width=True)
+            except Exception as e:
+                st.error(f"Graphviz rendering failed: {e}")
+                st.code(schematic_dot, language="dot")
+            st.download_button(
+                label="Download circuit schematic DOT",
+                data=schematic_dot,
+                file_name="circuit_schematic.dot",
+                mime="text/plain",
+                key="dl_final_dot",
+            )
+        else:
+            st.caption("No schematic DOT available.")
+
+        gf_yaml = st.session_state.get("gf_netlist_yaml")
+        if gf_yaml:
+            st.subheader("GDSFactory Netlist")
+            with st.expander("YAML netlist", expanded=False):
+                st.code(gf_yaml, language="yaml")
+            st.download_button(
+                label="Download GDSFactory netlist (YAML)",
+                data=gf_yaml,
+                file_name="gf_netlist.yaml",
+                mime="text/yaml",
+                key="dl_gf_netlist",
+            )
+
+    # -- GDS Layout + SAX Simulation results (Phase 8) -------------------------
+    gds_b64 = st.session_state.get("gds_fig_b64")
+    sax_b64 = st.session_state.get("sax_fig_b64")
+
+    if gds_b64 or sax_b64:
+        st.markdown("---")
+        st.subheader("Layout and Simulation")
+
+        if gds_b64:
+            st.markdown("**GDS Layout**")
+            st.image(base64.b64decode(gds_b64), use_container_width=True)
+
+        if sax_b64:
+            st.markdown("**S-Parameter Simulation**")
+            st.image(base64.b64decode(sax_b64), use_container_width=True)
+
+        dl_col1, dl_col2, dl_col3 = st.columns(3)
+        gds_path = st.session_state.get("gds_file_path")
+        if gds_path:
+            try:
+                with open(gds_path, "rb") as f:
+                    gds_bytes = f.read()
+                with dl_col1:
+                    st.download_button(
+                        label="Download GDS file",
+                        data=gds_bytes,
+                        file_name="circuit_output.gds",
+                        mime="application/octet-stream",
+                        key="dl_gds_file",
+                    )
+            except FileNotFoundError:
+                with dl_col1:
+                    st.caption("GDS file not found on disk.")
+
+        s_params = st.session_state.get("s_params_json")
+        if s_params:
+            with dl_col2:
+                st.download_button(
+                    label="Download S-parameters (JSON)",
+                    data=json.dumps(s_params, indent=2),
+                    file_name="s_parameters.json",
+                    mime="application/json",
+                    key="dl_s_params",
+                )
 
     st.markdown("---")
 
@@ -460,12 +869,13 @@ if di is not None:
         )
 
     with col_dot:
-        with st.expander("DOT Source", expanded=False):
-            st.code(st.session_state.dot_string, language="dot")
+        pre_dot = st.session_state.preschematic_dot or st.session_state.dot_string or ""
+        with st.expander("DOT Source (Preschematic)", expanded=False):
+            st.code(pre_dot, language="dot")
 
         st.download_button(
-            label="Download DOT",
-            data=st.session_state.dot_string,
+            label="Download Preschematic DOT",
+            data=pre_dot,
             file_name="preschematic.dot",
             mime="text/plain",
         )
@@ -474,7 +884,8 @@ if di is not None:
         for i, event in enumerate(st.session_state.run_log):
             etype = event["type"]
             if etype == "phase":
-                st.markdown(f"**[{i}] Phase: {event['phase']}** — {event['detail']}")
+                lbl = PHASE_LABELS.get(event["phase"], event["phase"])
+                st.markdown(f"**[{i}] {lbl}** — {event['detail']}")
             elif etype == "concepts":
                 st.markdown(f"[{i}] Concepts: {event['components']} | "
                             f"Params: {event['parameters']} | Specs: {event['specs']}")
@@ -501,5 +912,28 @@ if di is not None:
                             f"{v['summary'][:150]}")
             elif etype == "done":
                 st.markdown(f"[{i}] ✅ Done")
+            elif etype == "pipeline_phase":
+                lbl = PHASE_LABELS.get(event.get("phase", "?"), event.get("phase", "?"))
+                st.markdown(f"[{i}] **{lbl}**")
+            elif etype == "selection_done":
+                n = len(event.get("selection", {}).get("mappings", []))
+                st.markdown(f"[{i}] Component selection: {n} mapping(s)")
+            elif etype == "dot_draft":
+                st.markdown(f"[{i}] DOT draft generated")
+            elif etype == "edge_routing_done":
+                st.markdown(f"[{i}] Edge routing done")
+            elif etype == "layout_done":
+                n = len(event.get("positions", {}))
+                st.markdown(f"[{i}] Layout done ({n} positions)")
+            elif etype == "feedback":
+                issues = event.get("issues", [])
+                st.markdown(f"[{i}] Feedback: {len(issues)} issue(s)")
+            elif etype == "pipeline_done":
+                st.markdown(f"[{i}] Pipeline complete")
+            elif etype == "gds_rendered":
+                routing = "with" if event.get("routing_ok") else "without"
+                st.markdown(f"[{i}] GDS rendered ({routing} routing)")
+            elif etype == "layout_sim_done":
+                st.markdown(f"[{i}] Layout and simulation complete")
             elif etype == "error":
                 st.markdown(f"[{i}] ❌ {event['message']}")
