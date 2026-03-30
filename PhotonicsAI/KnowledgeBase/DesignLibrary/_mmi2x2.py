@@ -7,6 +7,7 @@ ports: 2x2
 NodeLabels:
     - passive
     - 2x2
+aka: 2x2 coupler, 2x2 splitter, MMI coupler, 2x2 MMI, combiner, 2x2 combiner
 Bandwidth: 50 nm
 Args:
     -width: input and output straight width. Defaults to cross_section width.

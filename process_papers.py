@@ -600,7 +600,18 @@ def main():
     tracer.stop()
     tracer.dump_records(output_dir / "full_llm_trace.json")
 
-    # 3. Schema Evolution (post-batch)
+    # 3. Post-DIA: Enrich PDK cells from newly discovered Component relationships
+    print("\n--- PDK Enrichment (Direction A: Component → PDK) ---")
+    try:
+        from PhotonicsAI.KnowledgeBase.agents.pdk_ingestion_agent.enrichment import (
+            enrich_pdk_from_components,
+        )
+        n_enriched = enrich_pdk_from_components(client)
+        print(f"  Propagated {n_enriched} edges from Components to PDK cells")
+    except Exception as e:
+        print(f"  PDK enrichment skipped: {e}")
+
+    # 4. Schema Evolution (post-batch)
     print("\n--- Schema Evolution Agent ---")
     try:
         sea = SchemaEvolutionAgent(

@@ -217,6 +217,40 @@ class PPCAgent:
         except Exception as e:
             print(f"Warning: Architecture validation step failed: {e}")
 
+        # Phase A.7: Dedicated Architecture Decomposition
+        # Re-attempt structural decomposition for all Architecture entities using a
+        # specialised prompt that scans the full paper for evidence.
+        try:
+            arch_entities = [e for e in raw_entities if e.entity_type == "Architecture"]
+            if arch_entities:
+                from .architecture_decomposer import decompose_architectures
+
+                comp_entities = [e for e in raw_entities if e.entity_type == "Component"]
+                templates = decompose_architectures(
+                    arch_entities,
+                    comp_entities,
+                    filtered_text,
+                    described,
+                    self.kb_client,
+                )
+                upgraded = 0
+                for name, tmpl in templates.items():
+                    if name in described:
+                        described[name]["architecture_template"] = tmpl.model_dump()
+                        described[name]["components"] = [
+                            r.component_type for r in tmpl.component_roles
+                        ]
+                        described[name]["connectivity"] = [
+                            f"{c.from_role}.{c.from_port} -> {c.to_role}.{c.to_port}"
+                            for c in tmpl.connections
+                        ]
+                        described[name]["arch_valid"] = True
+                        upgraded += 1
+                if upgraded:
+                    print(f"Phase A.7: Decomposed {upgraded}/{len(arch_entities)} architectures into structured templates")
+        except Exception as e:
+            print(f"Warning: Architecture decomposition step (A.7) failed: {e}")
+
         # Phase B: Normalization
         print("Phase B: Normalizing entities against KB...")
         # Convert describer object to dict if it isn't already (it might be EntityDescriptionList)

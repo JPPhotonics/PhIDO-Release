@@ -67,7 +67,8 @@ class VSAAgent:
             "Architecture": "Architectures",
             "Property": "Properties",
             "Design_Function": "Design_Functions",
-            "Physical_Principle": "Physical_Principles"
+            "Physical_Principle": "Physical_Principles",
+            "PDK_Cell": "PDK_Cells",
         }
 
     def process(self, ppc_result: Dict[str, Any], document_key: str) -> VSAUpdatePayload:

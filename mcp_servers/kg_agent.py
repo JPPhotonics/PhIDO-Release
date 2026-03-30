@@ -97,7 +97,15 @@ Strategy:
 - For "What can do X?" questions: resolve_function → then drill into the results.
 - For "How does X relate to Y?": search both, then use get_concept_neighborhood.
 - Always cite which tool returned the information.
-- If the KG has no relevant information, say so honestly. Do not fabricate.
+
+CRITICAL — when to refuse:
+- If ALL of your KG tool calls return empty results, zero hits, or only errors,
+  you MUST NOT attempt to answer from your training data. Instead, respond with
+  exactly: "The Knowledge Graph does not contain information relevant to this
+  question. Unable to provide an answer from the available KG data."
+- Do NOT pad an empty retrieval with general knowledge. The answer must be
+  grounded exclusively in KG-retrieved evidence. A honest "no data" response
+  is always preferred over an ungrounded answer.
 """
 
 # ---------------------------------------------------------------------------

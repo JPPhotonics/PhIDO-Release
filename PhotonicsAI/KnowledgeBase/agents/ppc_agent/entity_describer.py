@@ -49,7 +49,8 @@ class EntityDescription(BaseModel):
         default_factory=list,
         description=(
             "For Architecture entities ONLY: list of component entities that make up the architecture "
-            "(must be a subset of the provided neighbor_entities). Empty for non-architectures."
+            "(preferably from the provided candidate list, but others are allowed if evidence supports them). "
+            "Empty for non-architectures."
         ),
     )
     connectivity: List[str] = Field(
@@ -383,7 +384,7 @@ Rules:
 
 Architecture-specific rules (IMPORTANT):
 - If entity_type is "Architecture", you MUST:
-  - Provide `components`: the component make-up of the architecture (subset of the provided neighbor_entities).
+  - Provide `components`: the component make-up of the architecture (preferably from the provided candidate_components list, but you may name others if the evidence clearly supports them).
   - Provide `connectivity`: detailed statements CLEARLY describing how components connect to one another to form the architecture (e.g., "The laser output couples into the MZI input arm," NOT just "The components are connected").
 - Connectivity Consistency Rule:
   - The `connectivity` description must ONLY reference components listed in `components`.
@@ -391,20 +392,27 @@ Architecture-specific rules (IMPORTANT):
 - If you cannot identify both components AND detailed connectivity set:
   - `components` = []
   - `connectivity` = []
-  (Downstream logic may discard this architecture.)
+  (A downstream dedicated decomposition phase will attempt recovery.)
 
 Output must be valid JSON matching the requested schema."""
 
         # Build a compact prompt for all entities in one call to reduce cost
+        all_component_names = [e.name for e in raw_entities if e.entity_type == "Component"]
         prompt_items = []
         for ent in raw_entities:
             pack_text = packs[ent.name].render()
             neighbors = packs[ent.name].neighbor_entities
+
+            if ent.entity_type == "Architecture":
+                candidates = sorted(set(neighbors + all_component_names))
+            else:
+                candidates = neighbors
+
             prompt_items.append(
                 {
                     "name": ent.name,
                     "entity_type": ent.entity_type,
-                    "neighbor_entities": neighbors,
+                    "neighbor_entities": candidates,
                     "evidence_context": pack_text,
                 }
             )
@@ -433,7 +441,7 @@ Return JSON with this shape:
 Important:
 - The 'name' MUST match the input name exactly.
 - 'related_entities' must be a subset of the provided neighbor_entities for that entity.
-- For entity_type == "Architecture": `components` must be a subset of neighbor_entities and `connectivity` must be non-empty if evidence supports it.
+- For entity_type == "Architecture": `components` should preferably come from the provided neighbor_entities but may include other names if the evidence clearly supports them. `connectivity` must be non-empty if evidence supports it.
 """
 
         out: Dict[str, Dict] = {}
@@ -445,6 +453,7 @@ Important:
             entities = []
 
         # Index by name; always include at least context_pack fallback
+        paper_entity_names_lower = {e.name.lower() for e in raw_entities}
         generated_by_name: Dict[str, EntityDescription] = {e.name: e for e in entities}
         for ent in raw_entities:
             pack = packs[ent.name]
@@ -457,6 +466,16 @@ Important:
                 arch_components = d.components or []
                 arch_connectivity = d.connectivity or []
                 arch_valid = (not is_arch) or (len(arch_components) > 0 and len(arch_connectivity) > 0)
+
+                # Post-hoc validation: flag components not found in the paper's entity list
+                component_warnings: List[str] = []
+                if is_arch and arch_components:
+                    for comp in arch_components:
+                        if comp.lower() not in paper_entity_names_lower:
+                            component_warnings.append(
+                                f"Component '{comp}' not found in paper entity list"
+                            )
+
                 out[ent.name] = {
                     "description": d.description,
                     "evidence_quotes": d.evidence_quotes,
@@ -466,6 +485,7 @@ Important:
                     "components": arch_components,
                     "connectivity": arch_connectivity,
                     "arch_valid": arch_valid,
+                    "component_warnings": component_warnings,
                 }
             else:
                 out[ent.name] = {
@@ -477,6 +497,7 @@ Important:
                     "components": [],
                     "connectivity": [],
                     "arch_valid": ent.entity_type != "Architecture",
+                    "component_warnings": [],
                 }
 
         return out

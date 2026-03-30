@@ -47,6 +47,7 @@ dependencies = [
     "haystack-ai",
     "bayesian-optimization",
     "protobuf==3.20.3",
+    "boto3>=1.34.0",
 ]
 description = "Design"
 keywords = ["python"]

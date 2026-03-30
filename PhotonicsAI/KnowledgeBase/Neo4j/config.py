@@ -26,6 +26,7 @@ class Neo4jConfig:
         "design_functions": "Design_Function",
         "physical_principles": "Physical_Principle",
         "documents": "Document",
+        "pdk_cells": "PDK_Cell",
     })
     
     # Relationship mapping
@@ -36,18 +37,23 @@ class Neo4jConfig:
         "uses_component": "USES_COMPONENT",
         "related_to": "RELATED_TO",
         "extracted_from": "EXTRACTED_FROM",
+        "implements": "IMPLEMENTS",
+        "composed_of": "COMPOSED_OF",
+        "exhibits": "EXHIBITS",
+        "fabricated_with": "FABRICATED_WITH",
+        "supersedes": "SUPERSEDES",
     })
 
     def get_label_for_collection(self, collection_name: str) -> str:
         """Map generic collection names (e.g. 'Components') to Neo4j Labels (e.g. 'Component')."""
-        # Handle both singular and plural inputs gracefully
         mapping = {
             "Components": "Component",
             "Architectures": "Architecture",
             "Properties": "Property",
             "Design_Functions": "Design_Function",
             "Physical_Principles": "Physical_Principle",
-            "Documents": "Document"
+            "Documents": "Document",
+            "PDK_Cells": "PDK_Cell",
         }
         return mapping.get(collection_name, collection_name.rstrip('s'))
 

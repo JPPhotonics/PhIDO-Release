@@ -6,6 +6,7 @@ Description: Converts the mode from TE0 to TE1
 ports: 2x2
 NodeLabels:
     - passive
+aka: mode converter, mode coupler, TE0 to TE1, mode multiplexer
 Bandwidth: 100 nm
 """
 

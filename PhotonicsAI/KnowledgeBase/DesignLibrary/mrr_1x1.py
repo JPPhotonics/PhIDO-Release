@@ -7,6 +7,7 @@ ports: 1x1
 NodeLabels:
     - passive
     - 1x1
+aka: ring resonator, micro-ring, MRR, ring filter, all-pass ring, optical ring
 Bandwidth: 50 nm
 Args:
     -radius: for the bend and coupler

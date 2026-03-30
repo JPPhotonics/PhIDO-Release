@@ -158,23 +158,42 @@ def search_components(query: str) -> str:
     
     scored = []
     for comp in CATALOG:
-        # Build a searchable text blob for this component
-        searchable = " ".join([
-            comp["module_name"],
-            comp["name"],
-            comp["description"],
-            comp.get("summary", ""),
-            comp.get("aka", "") or "",
-            " ".join(comp.get("labels", [])),
-            comp.get("ports", ""),
-        ]).lower()
+        score = 0
         
-        # Simple term-matching scoring
-        score = sum(1 for term in query_terms if term in searchable)
+        name_lower = comp["name"].lower()
+        module_lower = comp["module_name"].lower()
+        aka_lower = (comp.get("aka", "") or "").lower()
+        aka_items = [a.strip() for a in aka_lower.split(",") if a.strip()]
+        desc_lower = comp["description"].lower()
+        labels_lower = " ".join(comp.get("labels", [])).lower()
         
-        # Boost exact module_name match
-        if query_lower in comp["module_name"].lower():
+        # Exact full-query match in aka (highest priority)
+        if query_lower in aka_items:
+            score += 10
+        # Exact full-query match in name
+        if query_lower == name_lower:
+            score += 10
+        # Full query as substring of name
+        elif query_lower in name_lower:
+            score += 6
+        
+        # Exact module_name match
+        if query_lower in module_lower:
             score += 5
+        
+        # Per-term matching with field weights
+        for term in query_terms:
+            if term in name_lower:
+                score += 3
+            if term in aka_lower:
+                score += 3
+            elif term in desc_lower:
+                score += 1
+            if term in labels_lower:
+                score += 1
+            if term in module_lower:
+                score += 1
+        
         # Boost ports match (e.g. "1x2" -> "1x2 MZI")
         for term in query_terms:
             if "x" in term and term == comp.get("ports", ""):

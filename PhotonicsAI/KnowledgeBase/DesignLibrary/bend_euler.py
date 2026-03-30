@@ -7,6 +7,7 @@ ports: 1x1
 NodeLabels:
     - passive
     - 1x1
+aka: bend, waveguide bend, Euler bend, curved waveguide
 Bandwidth: 100 nm
 Args:
     -radius: in um. Defaults to cross_section_radius.

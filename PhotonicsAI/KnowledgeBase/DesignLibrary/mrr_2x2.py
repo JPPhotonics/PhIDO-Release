@@ -7,6 +7,7 @@ ports: 2x2
 NodeLabels:
     - passive
     - 2x2
+aka: add-drop ring, ring resonator, micro-ring, MRR, ring filter, double bus ring
 Bandwidth: 50 nm
 Args:
     -radius: for the bend and coupler
@@ -33,15 +34,21 @@ from PhotonicsAI.KnowledgeBase.DesignLibrary import _mmi1x2, bend_euler, straigh
 
 @gf.cell
 def mrr_2x2(gap: float = 0.2, radius: float = 10) -> gf.Component:
-    """The component."""
-    c = gf.Component()
-    ref = c << gf.components.ring_double(gap=0.2, radius=10)
-    c.add_port("o1", port=ref.ports["o1"])
-    c.add_port("o2", port=ref.ports["o2"])
-    c.add_port("o3", port=ref.ports["o3"])
-    c.add_port("o4", port=ref.ports["o4"])
+    """The component.
 
-    # params = get_params(settings)
+    Port convention (matches schematic counter-clockwise order):
+        o1 = left-bottom  (input),   o2 = left-top  (add)
+        o3 = right-top    (drop),    o4 = right-bottom (through)
+
+    ring_double's native numbering is per-bus (o1/o2 = bottom bus,
+    o3/o4 = top bus), so we remap here to left/right convention.
+    """
+    c = gf.Component()
+    ref = c << gf.components.ring_double(gap=gap, radius=radius)
+    c.add_port("o1", port=ref.ports["o1"])  # left-bottom  ← ring o1
+    c.add_port("o2", port=ref.ports["o3"])  # left-top     ← ring o3
+    c.add_port("o3", port=ref.ports["o4"])  # right-top    ← ring o4
+    c.add_port("o4", port=ref.ports["o2"])  # right-bottom ← ring o2
     return c
 
 

@@ -255,7 +255,7 @@ def search_concepts(query: str, entity_type: str = "") -> str:
         query: Natural language description, e.g. "high speed optical modulator"
             or "wavelength selective filter" or "carrier depletion effect"
         entity_type: Optional. One of: Components, Architectures, Properties,
-            Design_Functions, Physical_Principles. If empty, searches all types.
+            Design_Functions, Physical_Principles, PDK_Cells. If empty, searches all types.
     """
     client, err = _require_neo4j()
     if client is None:
@@ -270,6 +270,7 @@ def search_concepts(query: str, entity_type: str = "") -> str:
             "Properties",
             "Design_Functions",
             "Physical_Principles",
+            "PDK_Cells",
         ]
     )
     
@@ -565,6 +566,232 @@ def get_component_properties(component_name: str) -> str:
         return json.dumps({"error": f"Property lookup failed: {e}"})
     
 @mcp.tool()
+def get_pdk_implementations(concept_name: str) -> str:
+    """Find all PDK cells that implement a given Component or Architecture concept.
+
+    Returns concrete PDK_Cell nodes linked via IMPLEMENTS, including their metadata,
+    port positions, and topology templates. Use this to find real fabrication-ready
+    cells for an abstract concept.
+
+    Args:
+        concept_name: Name of a Component or Architecture, e.g. "MZI", "Ring_Resonator"
+    """
+    client, err = _require_neo4j()
+    if client is None:
+        return err
+
+    query = """
+    MATCH (comp)
+    WHERE (comp:Component OR comp:Architecture)
+      AND (comp.name = $name OR toLower(comp.name) = toLower($name))
+    WITH comp LIMIT 1
+    OPTIONAL MATCH (pdk:PDK_Cell)-[:IMPLEMENTS]->(comp)
+    RETURN comp.name AS concept_name,
+           labels(comp)[0] AS concept_type,
+           collect({
+             module_name: pdk.module_name,
+             display_name: pdk.display_name,
+             pdk_name: pdk.pdk_name,
+             ports: pdk.ports,
+             technology: pdk.technology,
+             description: pdk.description,
+             dx_um: pdk.dx_um,
+             dy_um: pdk.dy_um,
+             port_details: pdk.port_details,
+             topology_template: pdk.topology_template,
+             is_primitive: pdk.is_primitive
+           }) AS implementations
+    """
+
+    try:
+        with client.driver.session() as session:
+            result = session.run(query, name=concept_name)
+            record = result.single()
+
+            if not record or not record["concept_name"]:
+                return json.dumps({
+                    "error": f"Concept '{concept_name}' not found.",
+                    "suggestion": "Try search_concepts to find the correct name.",
+                })
+
+            impls = [i for i in record["implementations"] if i.get("module_name")]
+            for impl in impls:
+                # Parse JSON strings back for readability
+                for json_field in ("port_details", "topology_template"):
+                    raw = impl.get(json_field)
+                    if isinstance(raw, str):
+                        try:
+                            impl[json_field] = json.loads(raw)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+
+            return json.dumps({
+                "concept": record["concept_name"],
+                "concept_type": record["concept_type"],
+                "implementation_count": len(impls),
+                "implementations": impls,
+            }, indent=2, default=str)
+
+    except Exception as e:
+        return json.dumps({"error": f"PDK implementation lookup failed: {e}"})
+
+
+@mcp.tool()
+def get_pdk_cell_details(module_name: str, pdk_name: str = "DemoPDK") -> str:
+    """Get full details for a specific PDK cell from the knowledge graph.
+
+    Returns the cell's metadata, port positions, topology template, composition
+    tree (COMPOSED_OF), and all relationships (IMPLEMENTS, PERFORMS_FUNCTION, etc.).
+
+    Args:
+        module_name: Exact PDK module name, e.g. "mzi_2x2_heater_tin_cband"
+        pdk_name: PDK identifier. Defaults to "DemoPDK".
+    """
+    client, err = _require_neo4j()
+    if client is None:
+        return err
+
+    query = """
+    MATCH (pdk:PDK_Cell {module_name: $module_name, pdk_name: $pdk_name})
+    OPTIONAL MATCH (pdk)-[:IMPLEMENTS]->(comp:Component)
+    OPTIONAL MATCH (pdk)-[:COMPOSED_OF]->(child:PDK_Cell)
+    OPTIONAL MATCH (pdk)-[:PERFORMS_FUNCTION]->(func:Design_Function)
+    OPTIONAL MATCH (pdk)-[:FABRICATED_WITH]->(prin:Physical_Principle)
+    OPTIONAL MATCH (pdk)-[:EXHIBITS]->(prop:Property)
+    RETURN pdk,
+           collect(DISTINCT comp.name) AS implements,
+           collect(DISTINCT {name: child.module_name, display_name: child.display_name}) AS children,
+           collect(DISTINCT func.name) AS functions,
+           collect(DISTINCT prin.name) AS principles,
+           collect(DISTINCT prop.name) AS properties
+    """
+
+    try:
+        with client.driver.session() as session:
+            result = session.run(query, module_name=module_name, pdk_name=pdk_name)
+            record = result.single()
+
+            if not record or record["pdk"] is None:
+                return json.dumps({
+                    "error": f"PDK cell '{module_name}' not found in {pdk_name}.",
+                })
+
+            node = dict(record["pdk"])
+            node.pop("embedding", None)
+
+            # Parse JSON string fields
+            for json_field in ("port_details", "topology_template", "numeric_specs", "parameters"):
+                raw = node.get(json_field)
+                if isinstance(raw, str):
+                    try:
+                        node[json_field] = json.loads(raw)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+            def _clean(items):
+                return [i for i in items if i.get("name") is not None]
+
+            return json.dumps({
+                "cell": node,
+                "implements": record["implements"],
+                "composed_of": _clean(record["children"]),
+                "design_functions": record["functions"],
+                "physical_principles": record["principles"],
+                "properties": record["properties"],
+            }, indent=2, default=str)
+
+    except Exception as e:
+        return json.dumps({"error": f"PDK cell details lookup failed: {e}"})
+
+
+@mcp.tool()
+def search_pdk_by_function(function_description: str) -> str:
+    """Find PDK cells that can perform a given design function.
+
+    Reverse lookup from Design_Function through PERFORMS_FUNCTION to PDK_Cells.
+    Use this to find fabrication-ready components for a specific function.
+
+    Args:
+        function_description: The function to look up, e.g. "modulation",
+                              "wavelength filtering", "photodetection"
+    """
+    client, err = _require_neo4j()
+    if client is None:
+        return err
+
+    # Exact match first
+    query_exact = """
+    MATCH (pdk:PDK_Cell)-[:PERFORMS_FUNCTION]->(f:Design_Function)
+    WHERE f.name = $name OR toLower(f.name) = toLower($name)
+    RETURN pdk.module_name AS module_name,
+           pdk.display_name AS display_name,
+           pdk.pdk_name AS pdk_name,
+           pdk.ports AS ports,
+           pdk.description AS description,
+           f.name AS function_name
+    ORDER BY pdk.module_name
+    """
+
+    try:
+        results = []
+        with client.driver.session() as session:
+            for rec in session.run(query_exact, name=function_description):
+                results.append({
+                    "module_name": rec["module_name"],
+                    "display_name": rec["display_name"],
+                    "pdk_name": rec["pdk_name"],
+                    "ports": rec["ports"],
+                    "description": (rec["description"] or "")[:200],
+                    "matched_function": rec["function_name"],
+                })
+
+        if results:
+            return json.dumps({
+                "function": function_description,
+                "match_type": "exact",
+                "pdk_cells": results,
+            }, indent=2, default=str)
+
+        # Semantic fallback
+        hits = client.semantic_search(
+            query_text=function_description,
+            collection="Design_Functions",
+            limit=3,
+            threshold=0.4,
+        )
+        if not hits:
+            return json.dumps({
+                "function": function_description,
+                "match_type": "none",
+                "pdk_cells": [],
+                "message": "No matching design function found.",
+            })
+
+        best_name = hits[0].get("name", "")
+        with client.driver.session() as session:
+            for rec in session.run(query_exact, name=best_name):
+                results.append({
+                    "module_name": rec["module_name"],
+                    "display_name": rec["display_name"],
+                    "pdk_name": rec["pdk_name"],
+                    "ports": rec["ports"],
+                    "description": (rec["description"] or "")[:200],
+                    "matched_function": rec["function_name"],
+                })
+
+        return json.dumps({
+            "function": function_description,
+            "resolved_to": best_name,
+            "match_type": "semantic",
+            "similarity": hits[0].get("score", 0),
+            "pdk_cells": results,
+        }, indent=2, default=str)
+
+    except Exception as e:
+        return json.dumps({"error": f"PDK function search failed: {e}"})
+
+
+@mcp.tool()
 def kg_stats() -> str:
     """Get summary statistics about the knowledge graph: node counts by type, edge counts, etc.
 
@@ -577,7 +804,8 @@ def kg_stats() -> str:
     query_nodes = """
     MATCH (n)
     WHERE any(label IN labels(n) WHERE label IN
-        ['Component', 'Architecture', 'Property', 'Design_Function', 'Physical_Principle', 'Document'])
+        ['Component', 'Architecture', 'Property', 'Design_Function', 'Physical_Principle',
+         'Document', 'PDK_Cell', 'PDK_Cell_History'])
     RETURN labels(n)[0] AS type, count(n) AS count
     ORDER BY count DESC
     """
@@ -585,7 +813,8 @@ def kg_stats() -> str:
     query_edges = """
     MATCH ()-[r]->()
     WHERE type(r) IN ['PERFORMS_FUNCTION', 'BASED_ON_PRINCIPLE', 'HAS_PROPERTY',
-                       'USES_COMPONENT', 'RELATED_TO', 'EXTRACTED_FROM']
+                       'USES_COMPONENT', 'RELATED_TO', 'EXTRACTED_FROM',
+                       'IMPLEMENTS', 'COMPOSED_OF', 'EXHIBITS', 'FABRICATED_WITH', 'SUPERSEDES']
     RETURN type(r) AS relationship, count(r) AS count
     ORDER BY count DESC
     """

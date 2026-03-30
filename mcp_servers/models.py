@@ -5,6 +5,46 @@ from pydantic import BaseModel, Field
 
 
 # ---------------------------------------------------------------------------
+# Requirement traceability models
+# ---------------------------------------------------------------------------
+
+class UserRequirement(BaseModel):
+    """A single design requirement extracted from the user's prompt."""
+    id: str = Field(..., description="Sequential identifier (R1, R2, ...)")
+    category: str = Field(
+        ...,
+        description="'functional' (what it does), 'structural' (components/topology), "
+                    "'performance' (quantitative targets), or 'constraint' (fixed params)",
+    )
+    description: str = Field(..., description="Concise requirement statement")
+    source_span: str = Field(..., description="Verbatim text from user input")
+    priority: str = Field(
+        ...,
+        description="'explicit' (user stated directly) or 'inferred' (agent deduced from context)",
+    )
+
+
+class RequirementManifest(BaseModel):
+    """Structured list of all user requirements for a design session."""
+    requirements: list[UserRequirement] = Field(default_factory=list)
+    original_prompt: str = Field("", description="Raw user input, preserved verbatim")
+
+
+class RequirementTrace(BaseModel):
+    """Maps a single requirement to the design elements that address it."""
+    requirement_id: str = Field(..., description="References UserRequirement.id")
+    satisfied_by: list[str] = Field(
+        default_factory=list,
+        description="Component IDs, spec keys, or 'architecture' that address this",
+    )
+    satisfaction_type: str = Field(
+        ...,
+        description="'direct', 'partial', 'implicit', or 'unaddressed'",
+    )
+    notes: str = Field("", description="How/why this requirement is or isn't met")
+
+
+# ---------------------------------------------------------------------------
 # Disambiguation models (Phase 1.75)
 # ---------------------------------------------------------------------------
 
@@ -57,6 +97,16 @@ class ComponentIntent(BaseModel):
     port_config: Optional[str] = Field(None, description="Port config e.g. '2x2', '1x4' - only if stated or confidently inferred")
     specs: list[SpecEntry] = Field(default_factory=list, description="Extracted specifications as key-value pairs")
     role: Optional[str] = Field(None, description="Functional role: modulator, splitter, detector, filter, coupler, etc.")
+    component_type: Optional[str] = Field(
+        None,
+        description="Canonical device type: 'splitter', 'combiner', 'mzm', 'phase_shifter', "
+                    "'ring_resonator', 'waveguide', 'coupler', 'crossing', 'detector', 'grating_coupler'",
+    )
+    sub_type: Optional[str] = Field(
+        None,
+        description="Sub-type qualifier: 'mmi', 'directional_coupler', 'add_drop', "
+                    "'all_pass', '90_degree', 'balanced', 'unbalanced', 'heater', 'pin'",
+    )
     # Provenance
     confidence: float = Field(1.0, description="Extraction confidence 0.0-1.0")
     source_span: Optional[str] = Field(None, description="Verbatim text this was extracted from")
@@ -77,15 +127,36 @@ class DesignIntent(BaseModel):
     components: list[ComponentIntent] = Field(..., description="Extracted components, one entry per instance")
     connections: list[Connection] = Field(default_factory=list, description="Pairwise connections between components")
     ambiguities: list[str] = Field(default_factory=list, description="Noted ambiguities or assumptions made")
+    architecture_type: Optional[str] = Field(
+        None,
+        description="Primary architecture: 'mzi', 'splitter_tree', 'benes', 'clements', "
+                    "'reck', 'qpsk', 'wdm_demux', 'wdm_mux', 'crossbar', 'spanke', 'ring_filter'",
+    )
+    n_value: Optional[int] = Field(
+        None,
+        description="Primary scaling parameter (output count, port size, channel count)",
+    )
+    requirement_manifest: Optional[RequirementManifest] = Field(
+        None, description="Structured requirements extracted from user prompt",
+    )
+    requirement_traces: list[RequirementTrace] = Field(
+        default_factory=list,
+        description="Maps each requirement to the design elements that satisfy it",
+    )
+    unaddressed_requirements: list[str] = Field(
+        default_factory=list,
+        description="Requirement IDs the interpreter could not address",
+    )
     
     def summary(self) -> dict:
         """Clean view - no provenance."""
-        return {
+        result = {
             "title": self.title,
             "brief_summary": self.brief_summary,
             "components": [
                 {"id": c.id, "description": c.description,
-                 "port_config": c.port_config, "specs": {s.key: s.value for s in c.specs}, "role": c.role}
+                 "port_config": c.port_config, "specs": {s.key: s.value for s in c.specs},
+                 "role": c.role, "component_type": c.component_type, "sub_type": c.sub_type}
                 for c in self.components
             ],
             "connections": [
@@ -95,6 +166,17 @@ class DesignIntent(BaseModel):
             ],
             "ambiguities": self.ambiguities,
         }
+        if self.architecture_type:
+            result["architecture_type"] = self.architecture_type
+        if self.n_value is not None:
+            result["n_value"] = self.n_value
+        if self.requirement_traces:
+            result["requirement_traces"] = [
+                t.model_dump() for t in self.requirement_traces
+            ]
+        if self.unaddressed_requirements:
+            result["unaddressed_requirements"] = self.unaddressed_requirements
+        return result
         
     def full(self) -> dict:
         """Full view - includes provenance."""

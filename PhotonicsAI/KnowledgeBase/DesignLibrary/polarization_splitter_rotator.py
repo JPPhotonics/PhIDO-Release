@@ -8,6 +8,7 @@ and (2) convert the TM polarized light to TE polarized light.
 ports: 1x2
 NodeLabels:
     - passive
+aka: PSR, polarization splitter, polarization rotator, TE/TM splitter
 Bandwidth: 70 nm
 """
 

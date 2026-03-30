@@ -94,7 +94,7 @@ class Neo4jClient:
         
         labels_to_index = [
             "Component", "Architecture", "Property", 
-            "Design_Function", "Physical_Principle"
+            "Design_Function", "Physical_Principle", "PDK_Cell"
         ]
         
         dim = self.config.embedding_dimension
@@ -143,7 +143,6 @@ class Neo4jClient:
                 CREATE CONSTRAINT {constraint_name} IF NOT EXISTS
                 FOR (n:{label}) REQUIRE n.name IS UNIQUE
                 """
-                # For Document, it's title
                 if label == "Document":
                     query = f"""
                     CREATE CONSTRAINT document_title_unique IF NOT EXISTS
@@ -154,6 +153,26 @@ class Neo4jClient:
                     session.run(query)
                 except Exception as e:
                     print(f"Warning: Could not create constraint for {label}: {e}")
+
+            # PDK_Cell: composite uniqueness on (pdk_name, module_name)
+            try:
+                session.run("""
+                    CREATE CONSTRAINT pdk_cell_unique IF NOT EXISTS
+                    FOR (n:PDK_Cell)
+                    REQUIRE (n.pdk_name, n.module_name) IS UNIQUE
+                """)
+            except Exception as e:
+                print(f"Warning: Could not create constraint for PDK_Cell: {e}")
+
+            # PDK_Cell_History: composite uniqueness on (pdk_name, module_name, pdk_version)
+            try:
+                session.run("""
+                    CREATE CONSTRAINT pdk_cell_history_unique IF NOT EXISTS
+                    FOR (n:PDK_Cell_History)
+                    REQUIRE (n.pdk_name, n.module_name, n.pdk_version) IS UNIQUE
+                """)
+            except Exception as e:
+                print(f"Warning: Could not create constraint for PDK_Cell_History: {e}")
 
     def import_yaml_data(self, yaml_dir: Path):
         """Import YAML ontology files into the database."""

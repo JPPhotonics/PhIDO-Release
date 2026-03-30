@@ -10,6 +10,7 @@ ports: 1x2
 NodeLabels:
     - passive
     - 1x2
+aka: splitter, power splitter, beamsplitter, beam splitter, 1x2 splitter, MMI splitter, 1x2 coupler
 Bandwidth: 50 nm
 Args:
     -width: input and output straight width. Defaults to cross_section width.

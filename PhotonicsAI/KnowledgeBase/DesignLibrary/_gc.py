@@ -7,6 +7,7 @@ ports: 1x0
 NodeLabels:
     - passive
     - 1x1
+aka: grating coupler, fiber coupler, GC, input coupler, output coupler, I/O coupler
 Bandwidth: 100 nm
 """
 

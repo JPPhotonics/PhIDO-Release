@@ -6,6 +6,7 @@ Description: This is a waveguide crossing
 ports: 1x1
 NodeLabels:
     - passive
+aka: waveguide crossing, crossing, optical crossover
 Bandwidth: 100 nm
 Args:
     -length: straight length (um)

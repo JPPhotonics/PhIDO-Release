@@ -6,6 +6,7 @@ Description: This is a design for an inverse taper edge coupler to couple light 
 ports: 1x1
 NodeLabels:
     - passive
+aka: edge coupler, inverse taper, spot-size converter, butt coupler, fiber coupler
 Bandwidth: 100 nm
 Args:
     -length: straight length (um)

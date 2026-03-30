@@ -6,6 +6,7 @@ Description: This is a straight single-mode waveguide aka photonic wire.
 ports: 1x1
 NodeLabels:
     - passive
+aka: waveguide, straight waveguide, photonic wire, optical wire, bus waveguide, wire
 Bandwidth: 100 nm
 Args:
     -length: straight length (um)

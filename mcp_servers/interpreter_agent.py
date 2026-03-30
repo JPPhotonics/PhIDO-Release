@@ -20,11 +20,14 @@ Phases:
   Phase 1.5  — KG Grounding Gate (self-audit prompt if zero KG calls were made)
   Phase 1.75 — Disambiguation (agent asks user clarification questions)
   Phase 2    — Structured output extraction (DesignIntent)
+  Phase 2.5  — Topology gate (Clingo ASP — run by the orchestrator between 2 and 3)
   Phase 3    — Critic review (independent agent verifies output; loops back on failure)
 
-The pipeline is split into two entry points for Streamlit compatibility:
-  explore_and_ask()  — Phases 0 → 1 → 1.5 → 1.75 (pauses for user input)
-  finalize_stream()  — Phases 2 → 3 (resumes with optional clarifications)
+The pipeline is split into composable entry points for Streamlit/orchestrator use:
+  explore_and_ask()        — Phases 0 → 1 → 1.5 → 1.75 (pauses for user input)
+  extract_design_intent()  — Phase 2 only (structured extraction)
+  run_critic_review()      — Phase 3 only (critic loop with retries)
+  finalize_stream()        — Phases 2 → 3 (backward-compatible wrapper)
 
 Usage:
     from mcp_servers.interpreter_agent import interpret
@@ -41,6 +44,7 @@ from openai import OpenAI
 from mcp_servers.models import (
     DesignIntent, ComponentIntent, Connection,
     ClarificationQuestion, ClarificationRequest,
+    RequirementManifest,
 )
 
 
@@ -60,6 +64,54 @@ class ExtractedConcepts(BaseModel):
     specs: list[str] = Field(
         ..., description="Specific measurements or numeric values with units "
         "(e.g. '1550 nm', '10 dB', '150 um', '40 GHz bandwidth')")
+
+
+# ---------------------------------------------------------------------------
+# Requirement extraction (Phase 0.5)
+# ---------------------------------------------------------------------------
+
+REQUIREMENT_EXTRACTION_PROMPT = """\
+You are a requirements analyst for photonic integrated circuit design. Given a user's
+natural language design request, extract every requirement — both explicit (stated directly)
+and inferred (logically implied by the request).
+
+Categorise each requirement as:
+- **functional**: what the circuit must DO (modulate, split, filter, detect, etc.)
+- **structural**: required components or topology (MZI, splitter tree, ring resonator, etc.)
+- **performance**: quantitative targets (bandwidth, extinction ratio, insertion loss, etc.)
+- **constraint**: fixed parameters or boundary conditions (wavelength, port count, etc.)
+
+For each requirement, copy the verbatim source text from the user's prompt into source_span.
+Mark priority as 'explicit' if the user stated it directly, or 'inferred' if you deduced it
+from context (e.g. "QPSK" implies a 90-degree phase shifter even if not explicitly stated).
+
+Assign sequential IDs: R1, R2, R3, ...
+"""
+
+
+def _extract_requirements_llm(
+    client,
+    user_prompt: str,
+    model: str,
+) -> RequirementManifest:
+    """Phase 0.5: Extract structured requirements from the raw user prompt."""
+    try:
+        response = client.beta.chat.completions.parse(
+            model=model,
+            messages=[
+                {"role": "system", "content": REQUIREMENT_EXTRACTION_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format=RequirementManifest,
+        )
+        msg = response.choices[0].message
+        if msg.parsed:
+            manifest = msg.parsed
+            manifest.original_prompt = user_prompt
+            return manifest
+    except Exception:
+        pass
+    return RequirementManifest(original_prompt=user_prompt)
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +150,9 @@ try:
         resolve_function,
         get_concept_neighborhood,
         get_component_properties,
+        get_pdk_implementations,
+        get_pdk_cell_details,
+        search_pdk_by_function,
     )
     _KG_AVAILABLE = True
 except Exception as _kg_err:
@@ -291,6 +346,77 @@ if _KG_AVAILABLE:
         },
     ]
 
+    _kg_tool_defs.extend([
+        {
+            "type": "function",
+            "function": {
+                "name": "get_pdk_implementations",
+                "description": (
+                    "Find all concrete PDK cells that implement a given abstract Component "
+                    "or Architecture concept from the knowledge graph. Returns module names, "
+                    "port details, topology templates, and footprints. Use to bridge from "
+                    "domain knowledge to fabrication-ready components."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "concept_name": {
+                            "type": "string",
+                            "description": "Component or Architecture name, e.g. 'MZI', 'Ring_Resonator'",
+                        },
+                    },
+                    "required": ["concept_name"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_pdk_cell_details",
+                "description": (
+                    "Get full knowledge-graph details for a specific PDK cell: topology template, "
+                    "composition tree, linked components, design functions, physical principles, "
+                    "and properties. Use after search_pdk to get richer context from the KG."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "module_name": {
+                            "type": "string",
+                            "description": "Exact PDK module name, e.g. 'mzi_2x2_heater_tin_cband'",
+                        },
+                        "pdk_name": {
+                            "type": "string",
+                            "description": "PDK identifier. Defaults to 'DemoPDK'.",
+                            "default": "DemoPDK",
+                        },
+                    },
+                    "required": ["module_name"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "search_pdk_by_function",
+                "description": (
+                    "Find PDK cells that can perform a given design function. "
+                    "Reverse lookup from function description to concrete fabrication-ready cells."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "function_description": {
+                            "type": "string",
+                            "description": "Design function, e.g. 'modulation', 'wavelength filtering'",
+                        },
+                    },
+                    "required": ["function_description"],
+                },
+            },
+        },
+    ])
+
     TOOLS.extend(_kg_tool_defs)
 
     _TOOL_DISPATCH.update({
@@ -298,6 +424,9 @@ if _KG_AVAILABLE:
         "resolve_function": lambda args: resolve_function(args["function_name"]),
         "get_concept_neighborhood": lambda args: get_concept_neighborhood(args["concept_name"]),
         "get_component_properties": lambda args: get_component_properties(args["component_name"]),
+        "get_pdk_implementations": lambda args: get_pdk_implementations(args["concept_name"]),
+        "get_pdk_cell_details": lambda args: get_pdk_cell_details(args["module_name"], args.get("pdk_name", "DemoPDK")),
+        "search_pdk_by_function": lambda args: search_pdk_by_function(args["function_description"]),
     })
 
     _KG_TOOL_NAMES = frozenset([
@@ -305,6 +434,9 @@ if _KG_AVAILABLE:
         "resolve_function",
         "get_concept_neighborhood",
         "get_component_properties",
+        "get_pdk_implementations",
+        "get_pdk_cell_details",
+        "search_pdk_by_function",
     ])
 
 
@@ -396,6 +528,50 @@ When you are satisfied, say DONE and summarize your findings including what you 
 remaining ambiguities. Do NOT output the DesignIntent JSON yourself.
 """
 
+# ---------------------------------------------------------------------------
+# Reasoning strategy addenda — appended to AGENT_SYSTEM_PROMPT based on mode
+# ---------------------------------------------------------------------------
+
+_KG_FIRST_ADDENDUM = """\
+
+REASONING STRATEGY: KG-FIRST
+You MUST follow this tool-calling order for every component or concept:
+1. FIRST query the Knowledge Graph to understand the concept:
+   - Use search_knowledge_graph or get_component_properties to learn what the component IS,
+     what physical principles it uses, what sub-components it contains.
+   - Use get_pdk_implementations to discover which concrete PDK cells implement this concept.
+   - Use search_pdk_by_function if the user described a function rather than a specific component.
+2. THEN confirm fabrication details from the PDK:
+   - Use get_pdk_cell_details to get topology templates and full KG context for candidate cells.
+   - Use search_pdk / validate_ports / get_component_info to verify port configs and parameters.
+3. If get_pdk_implementations returns results, prefer those over blind search_pdk calls.
+4. When decomposing architectures, use the topology_template from get_pdk_cell_details as
+   your primary reference for the internal structure — do not guess from training data.
+
+The KG is your primary reasoning tool. The PDK catalog is for fabrication confirmation only.
+"""
+
+_PDK_FIRST_ADDENDUM = """\
+
+REASONING STRATEGY: PDK-FIRST
+You MUST follow this tool-calling order for every component or concept:
+1. FIRST search the PDK catalog directly:
+   - Use search_pdk with the user's description to find matching fabrication components.
+   - Use validate_ports and get_component_info to confirm port configs and parameters.
+   - Use get_module_params to inspect available parameters.
+2. ONLY consult the Knowledge Graph when:
+   - The PDK search returns no results or ambiguous results.
+   - You need to decompose a complex architecture that has no monolithic PDK match.
+   - The user's description uses abstract concepts you need to resolve to concrete components.
+3. When you do consult the KG, prefer targeted queries:
+   - resolve_function for function-based lookups.
+   - get_concept_neighborhood for decomposition guidance.
+4. Do NOT use get_pdk_implementations or search_pdk_by_function unless PDK catalog search
+   failed to find suitable components.
+
+The PDK catalog is your primary reasoning tool. The KG is for disambiguation only.
+"""
+
 GROUNDING_GATE_PROMPT = """\
 GROUNDING REQUIRED: You mentioned the following concepts but did not consult the Knowledge 
 Graph for any of them:
@@ -436,6 +612,23 @@ Rules:
 - ambiguities: list anything you assumed or couldn't verify through tools.
   If the KG revealed multiple possible implementations, note that as an ambiguity.
   If a component description relies on your own knowledge rather than tool results, note it.
+
+ENRICHED FIELDS (populate these when applicable):
+- architecture_type: Set the primary architecture from this controlled vocabulary:
+  mzi, splitter_tree, benes, clements, reck, qpsk, wdm_demux, wdm_mux, crossbar, spanke, ring_filter.
+  Leave null if the design doesn't match a known architecture pattern.
+- n_value: Set the primary scaling parameter (output count, port size, channel count).
+  For example, a 1x8 splitter tree has n_value=8; a 4x4 Benes has n_value=4.
+- component_type: For EACH component, set a canonical device type from:
+  splitter, combiner, mzm, phase_shifter, ring_resonator, waveguide, coupler, crossing,
+  detector, grating_coupler. This must match the component's actual function.
+- sub_type: Optional qualifier from: mmi, directional_coupler, add_drop, all_pass,
+  90_degree, balanced, unbalanced, heater, pin.
+- requirement_traces: If a requirement_manifest is provided in the system context,
+  produce one RequirementTrace per requirement, mapping it to the component IDs or spec
+  keys that satisfy it. Use satisfaction_type: direct (fully addressed), partial (partly),
+  implicit (addressed as side-effect), or unaddressed (cannot satisfy).
+- unaddressed_requirements: List the IDs of any requirements you cannot address.
 """
 
 CRITIC_SYSTEM_PROMPT = """\
@@ -514,12 +707,28 @@ Check the following:
 - The connections between sub-components must reflect the actual internal topology,
   not just surface-level "A connected to B".
 
+**Requirement coverage** (if requirement_manifest is provided)
+- Every requirement in the manifest should have a corresponding requirement_trace in the
+  DesignIntent with satisfaction_type 'direct', 'partial', or 'implicit'.
+- Requirements with satisfaction_type 'unaddressed' must appear in unaddressed_requirements.
+- If a requirement has no trace at all, flag it as a major issue.
+- Verify that 'direct' traces genuinely satisfy the requirement (e.g. if R3 says "4 channels"
+  and it traces to the architecture, verify there are actually 4 channels in the design).
+- If the manifest is absent, skip this section.
+
+**Enriched field consistency**
+- If architecture_type is set, verify it matches the actual circuit topology.
+- If n_value is set, verify it's consistent with the component count and architecture.
+- Every component should have component_type set to a valid canonical type.
+- sub_type should be set when the component has a clear specialisation.
+
 WORKFLOW:
 1. Read the user prompt, extracted concepts, and any user clarifications carefully.
 2. Compare against the DesignIntent systematically.
 3. Independently verify using your tools — check at least: every port_config, every 
    decomposition, and any component with confidence >= 0.7.
-4. Produce your verdict.
+4. Check requirement coverage if a manifest is available.
+5. Produce your verdict.
 
 For each issue found, classify severity:
 - **major**: Missing component, wrong topology, hallucinated element, incorrect port config, 
@@ -773,6 +982,7 @@ def explore_and_ask(
     max_tool_rounds: int = 15,
     max_grounding_rounds: int = 5,
     upstream_feedback: Optional[list[dict]] = None,
+    reasoning_strategy: str = "balanced",
 ) -> Generator[AgentEvent, None, None]:
     """
     Run Phases 0 → 1 → 1.5 → 1.75 (disambiguation).
@@ -781,6 +991,12 @@ def explore_and_ask(
     that contains the agent's questions and the full conversation history so
     the pipeline can be resumed via ``finalize_stream()``.
 
+    Parameters
+    ----------
+    reasoning_strategy : str
+        One of "balanced", "kg_first", "pdk_first". Controls whether the agent
+        prioritises Knowledge Graph or PDK catalog tools.
+
     Event types (in addition to the standard phase/tool/agent events):
         {"type": "clarification", "request": dict, "messages": list,
          "extracted": dict, "tool_log": list}
@@ -788,10 +1004,20 @@ def explore_and_ask(
     client = OpenAI()
     tool_log: list[tuple[str, dict]] = []
 
+    # Build system prompt based on reasoning strategy
+    sys_prompt = AGENT_SYSTEM_PROMPT
+    if reasoning_strategy == "kg_first":
+        sys_prompt += _KG_FIRST_ADDENDUM
+    elif reasoning_strategy == "pdk_first":
+        sys_prompt += _PDK_FIRST_ADDENDUM
+
     messages: list = [
-        {"role": "system", "content": AGENT_SYSTEM_PROMPT},
+        {"role": "system", "content": sys_prompt},
         {"role": "user", "content": user_prompt},
     ]
+
+    yield {"type": "phase", "phase": "strategy",
+           "detail": f"Reasoning strategy: {reasoning_strategy}"}
 
     # Inject upstream feedback if this is a retry from downstream validation
     if upstream_feedback:
@@ -820,6 +1046,18 @@ def explore_and_ask(
            "components": extracted.components,
            "parameters": extracted.parameters,
            "specs": extracted.specs}
+
+    # -------------------------------------------------------------------
+    # Phase 0.5: Requirement extraction
+    # -------------------------------------------------------------------
+    yield {"type": "phase", "phase": "requirement_extraction",
+           "detail": "Extracting structured requirements from prompt..."}
+
+    requirement_manifest = _extract_requirements_llm(client, user_prompt, model)
+    n_reqs = len(requirement_manifest.requirements)
+
+    yield {"type": "phase", "phase": "requirement_extraction",
+           "detail": f"Extracted {n_reqs} requirement(s)."}
 
     # -------------------------------------------------------------------
     # Phase 1: Free agentic exploration
@@ -951,6 +1189,7 @@ def explore_and_ask(
         "messages": serializable_messages,
         "extracted": extracted.model_dump(),
         "tool_log": tool_log,
+        "requirement_manifest": requirement_manifest.model_dump(),
     }
 
 
@@ -981,19 +1220,25 @@ def _serialise_messages(messages: list) -> list[dict]:
 # Phase 2+ pipeline: finalize — takes saved state and produces DesignIntent
 # ---------------------------------------------------------------------------
 
-def finalize_stream(
+def extract_design_intent(
     messages: list,
     tool_log: list[tuple[str, dict]],
-    user_prompt: str,
     extracted_dict: dict,
     model: str = "o3-mini",
     max_tool_rounds: int = 10,
-    max_critic_rounds: int = 2,
     clarifications: Optional[dict[str, str]] = None,
     upstream_feedback: Optional[str] = None,
+    requirement_manifest_dict: Optional[dict] = None,
 ) -> Generator[AgentEvent, None, None]:
     """
-    Run Phases 2 → 3 (with optional clarification injection + re-exploration).
+    Phase 2 only: inject clarifications, re-explore, and extract a DesignIntent.
+
+    Yields streaming events and ends with either:
+        ``{"type": "done", "result": DesignIntent, "messages": list}``
+        ``{"type": "error", "message": str}``
+
+    This does **not** run the critic (Phase 3). Use ``run_critic_review``
+    for that, or ``finalize_stream`` which chains both.
 
     Parameters
     ----------
@@ -1001,23 +1246,23 @@ def finalize_stream(
         Conversation history from ``explore_and_ask()``.
     tool_log : list
         Tool call log from ``explore_and_ask()``.
-    user_prompt : str
-        Original user prompt (needed for critic context).
     extracted_dict : dict
         Serialised ``ExtractedConcepts`` from Phase 0.
     clarifications : dict, optional
         ``{ambiguity_question: user_answer}`` pairs from the disambiguation form.
-        If provided, injected before Phase 2.
     upstream_feedback : str, optional
-        Free-text feedback from downstream (e.g. schematic review gate).
-        If provided, injected as a user message before clarifications.
-
-    Event types (same as explore_and_ask plus):
-        {"type": "done", "result": DesignIntent, "messages": list}
-        {"type": "error", "message": str}
+        Free-text feedback from downstream (e.g. validation gate or schematic review).
+    requirement_manifest_dict : dict, optional
+        Serialised ``RequirementManifest`` from Phase 0.5.
     """
     client = OpenAI()
     extracted = ExtractedConcepts(**extracted_dict)
+    req_manifest: Optional[RequirementManifest] = None
+    if requirement_manifest_dict:
+        try:
+            req_manifest = RequirementManifest(**requirement_manifest_dict)
+        except Exception:
+            pass
 
     # -------------------------------------------------------------------
     # Inject upstream/schematic feedback (if any)
@@ -1071,37 +1316,82 @@ def finalize_stream(
                 break
 
     # -------------------------------------------------------------------
-    # Outer loop: Phase 2 → 3 (critic), repeat on failure
+    # Phase 2: Structured output extraction
     # -------------------------------------------------------------------
+    yield {"type": "phase", "phase": "structuring",
+           "detail": "Producing structured DesignIntent..."}
+
+    structuring_content = STRUCTURING_PROMPT
+    if req_manifest and req_manifest.requirements:
+        import json as _json
+        req_json = _json.dumps(req_manifest.model_dump(), indent=2, ensure_ascii=False)
+        structuring_content += (
+            "\n\nREQUIREMENT MANIFEST (from Phase 0.5 — produce requirement_traces for each):\n"
+            + req_json
+        )
+    messages.append({"role": "user", "content": structuring_content})
+
+    structured_response = client.beta.chat.completions.parse(
+        model=model,
+        messages=messages,
+        response_format=DesignIntent,
+    )
+    struct_msg = structured_response.choices[0].message
+    if not struct_msg.parsed:
+        yield {"type": "error", "message": f"LLM refused to produce DesignIntent: {struct_msg.refusal}"}
+        return
+
+    design_intent = struct_msg.parsed
+
+    serializable_messages = _serialise_messages(messages)
+    yield {"type": "done", "result": design_intent, "messages": serializable_messages}
+
+
+def run_critic_review(
+    user_prompt: str,
+    extracted_dict: dict,
+    design_intent: DesignIntent,
+    messages: list,
+    model: str = "o3-mini",
+    max_critic_rounds: int = 2,
+    max_tool_rounds: int = 10,
+    clarifications: Optional[dict[str, str]] = None,
+) -> Generator[AgentEvent, None, None]:
+    """
+    Phase 3 only: run the critic loop over an existing DesignIntent.
+
+    On critic failure, appends feedback to *messages* and re-extracts
+    a revised DesignIntent (up to ``max_critic_rounds`` retries).
+
+    Yields streaming events and ends with either:
+        ``{"type": "done", "result": DesignIntent, "messages": list}``
+        (the final — possibly revised — DesignIntent)
+        ``{"type": "error", "message": str}``
+
+    Parameters
+    ----------
+    user_prompt : str
+        Original user prompt (needed for critic context).
+    extracted_dict : dict
+        Serialised ``ExtractedConcepts`` from Phase 0.
+    design_intent : DesignIntent
+        The DesignIntent to review (from ``extract_design_intent``).
+    messages : list
+        Conversation history (mutated in place on critic retries).
+    max_critic_rounds : int
+        Maximum number of critic retry loops.
+    clarifications : dict, optional
+        User clarifications (passed through to the critic for context).
+    """
+    client = OpenAI()
+    extracted = ExtractedConcepts(**extracted_dict)
+
+    current_intent = design_intent
     total_attempts = 1 + max_critic_rounds
-    design_intent: Optional[DesignIntent] = None
 
     for attempt in range(total_attempts):
         attempt_label = f" (attempt {attempt + 1}/{total_attempts})" if total_attempts > 1 else ""
 
-        # ---------------------------------------------------------------
-        # Phase 2: Structured output extraction
-        # ---------------------------------------------------------------
-        yield {"type": "phase", "phase": "structuring",
-               "detail": f"Producing structured DesignIntent{attempt_label}..."}
-
-        messages.append({"role": "user", "content": STRUCTURING_PROMPT})
-
-        structured_response = client.beta.chat.completions.parse(
-            model=model,
-            messages=messages,
-            response_format=DesignIntent,
-        )
-        struct_msg = structured_response.choices[0].message
-        if not struct_msg.parsed:
-            yield {"type": "error", "message": f"LLM refused to produce DesignIntent: {struct_msg.refusal}"}
-            return
-
-        design_intent = struct_msg.parsed
-
-        # ---------------------------------------------------------------
-        # Phase 3: Critic review
-        # ---------------------------------------------------------------
         if attempt == total_attempts - 1:
             break
 
@@ -1110,7 +1400,7 @@ def finalize_stream(
 
         critic_verdict: Optional[CriticVerdict] = None
         for critic_event in _run_critic(
-            client, user_prompt, extracted, design_intent, model,
+            client, user_prompt, extracted, current_intent, model,
             clarifications=clarifications,
         ):
             if critic_event["type"] == "critic":
@@ -1144,14 +1434,103 @@ def finalize_stream(
                "detail": f"Critic FAILED (attempt {attempt + 1}/{total_attempts}). "
                          f"{len(critic_verdict.issues)} issue(s). Retrying..."}
 
-    # -------------------------------------------------------------------
-    # Yield final result
-    # -------------------------------------------------------------------
-    if design_intent is not None:
-        serializable_messages = _serialise_messages(messages)
-        yield {"type": "done", "result": design_intent, "messages": serializable_messages}
-    else:
-        yield {"type": "error", "message": "Agent loop ended without producing a DesignIntent"}
+        # Re-extract DesignIntent after critic feedback
+        yield {"type": "phase", "phase": "structuring",
+               "detail": f"Re-producing DesignIntent after critic feedback{attempt_label}..."}
+
+        structured_response = client.beta.chat.completions.parse(
+            model=model,
+            messages=messages,
+            response_format=DesignIntent,
+        )
+        struct_msg = structured_response.choices[0].message
+        if not struct_msg.parsed:
+            yield {"type": "error",
+                   "message": f"LLM refused to produce DesignIntent: {struct_msg.refusal}"}
+            return
+        current_intent = struct_msg.parsed
+
+    serializable_messages = _serialise_messages(messages)
+    yield {"type": "done", "result": current_intent, "messages": serializable_messages}
+
+
+def finalize_stream(
+    messages: list,
+    tool_log: list[tuple[str, dict]],
+    user_prompt: str,
+    extracted_dict: dict,
+    model: str = "o3-mini",
+    max_tool_rounds: int = 10,
+    max_critic_rounds: int = 2,
+    clarifications: Optional[dict[str, str]] = None,
+    upstream_feedback: Optional[str] = None,
+    requirement_manifest_dict: Optional[dict] = None,
+) -> Generator[AgentEvent, None, None]:
+    """
+    Run Phases 2 → 3 (backward-compatible wrapper).
+
+    Chains ``extract_design_intent`` (Phase 2) and ``run_critic_review``
+    (Phase 3). Callers that need to insert validation between the two
+    phases should call them separately instead.
+
+    Parameters
+    ----------
+    messages : list
+        Conversation history from ``explore_and_ask()``.
+    tool_log : list
+        Tool call log from ``explore_and_ask()``.
+    user_prompt : str
+        Original user prompt (needed for critic context).
+    extracted_dict : dict
+        Serialised ``ExtractedConcepts`` from Phase 0.
+    clarifications : dict, optional
+        ``{ambiguity_question: user_answer}`` pairs from the disambiguation form.
+        If provided, injected before Phase 2.
+    upstream_feedback : str, optional
+        Free-text feedback from downstream (e.g. schematic review gate).
+        If provided, injected as a user message before clarifications.
+    requirement_manifest_dict : dict, optional
+        Serialised ``RequirementManifest`` from Phase 0.5.
+        If provided, injected into the structuring prompt so the LLM can
+        produce requirement traces in the DesignIntent.
+
+    Event types (same as explore_and_ask plus):
+        {"type": "done", "result": DesignIntent, "messages": list}
+        {"type": "error", "message": str}
+    """
+    # Phase 2: extract DesignIntent
+    design_intent: Optional[DesignIntent] = None
+    for event in extract_design_intent(
+        messages=messages,
+        tool_log=tool_log,
+        extracted_dict=extracted_dict,
+        model=model,
+        max_tool_rounds=max_tool_rounds,
+        clarifications=clarifications,
+        upstream_feedback=upstream_feedback,
+        requirement_manifest_dict=requirement_manifest_dict,
+    ):
+        if event["type"] == "done":
+            design_intent = event["result"]
+        else:
+            yield event
+
+    if design_intent is None:
+        yield {"type": "error", "message": "Phase 2 failed to produce a DesignIntent"}
+        return
+
+    # Phase 3: critic review
+    for event in run_critic_review(
+        user_prompt=user_prompt,
+        extracted_dict=extracted_dict,
+        design_intent=design_intent,
+        messages=messages,
+        model=model,
+        max_critic_rounds=max_critic_rounds,
+        max_tool_rounds=max_tool_rounds,
+        clarifications=clarifications,
+    ):
+        yield event
 
 
 # ---------------------------------------------------------------------------
@@ -1208,6 +1587,7 @@ def interpret_stream(
         max_tool_rounds=max_tool_rounds,
         max_critic_rounds=max_critic_rounds,
         clarifications=None,
+        requirement_manifest_dict=saved_state.get("requirement_manifest"),
     ):
         yield event
 

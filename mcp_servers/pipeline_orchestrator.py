@@ -7,11 +7,15 @@ with validation gates and backward feedback loops.
 Not an MCP server — called directly by the Streamlit UI or scripts.
 
 Stages:
-  Phases 0-3   : Interpreter (explore_and_ask + finalize_stream)
+  Phases 0-1.75: Interpreter exploration (explore_and_ask)
+  Phase 2      : Structured DesignIntent extraction (extract_design_intent)
+  Phase 2.5    : Topology Gate (Clingo ASP architecture validation, Checkpoint A)
+  Phase 3      : Critic Review (run_critic_review — skipped if Clingo found errors)
   Phase 4      : Component Selection (LLM matches ComponentIntents to PDK modules)
   Phase 4.75   : Selection Validation Gate (programmatic checks)
   Phase 4.8    : LLM Compliance Check (verify functional match of selections)
   Phase 5      : Circuit DSL Construction + DOT generation (deterministic)
+  Phase 5.25   : AR Parameter Gate (Bedrock Automated Reasoning, Checkpoint B)
   Phase 5b     : Edge Routing (LLM adds port-level edges to DOT, with planarity retries)
   Phase 6      : Layout computation (Graphviz) + footprints (GDSFactory)
   Phase 6.5    : Schematic Validation Gate (programmatic checks)
@@ -37,7 +41,12 @@ from mcp_servers.models import (
     EdgePatch,
     ComponentSwap,
 )
-from mcp_servers.interpreter_agent import explore_and_ask, finalize_stream
+from mcp_servers.interpreter_agent import (
+    explore_and_ask,
+    finalize_stream,
+    extract_design_intent,
+    run_critic_review,
+)
 from mcp_servers.pdk_catalog_server import (
     search_components,
     get_component_details,
@@ -53,6 +62,8 @@ from mcp_servers.schematic_builder_server import (
     find_open_ports,
     export_gf_netlist,
 )
+from mcp_servers.ar_validator import validate_parameters
+from mcp_servers.clingo_validator import validate_topology
 
 PipelineEvent = dict[str, Any]
 
@@ -664,18 +675,37 @@ def _validate_schematic(
 # Helpers (deterministic, no LLM)
 # ---------------------------------------------------------------------------
 
-def _get_ground_truth_params(pdk_module: str) -> dict[str, str]:
+def _coerce_setting_value(value_str: str, reference_value=None):
+    """Convert a string setting value to the native type matching the reference.
+
+    GDSFactory components expect float/int parameters, not strings.
+    """
+    if reference_value is not None:
+        target_type = type(reference_value)
+        try:
+            return target_type(value_str)
+        except (ValueError, TypeError):
+            pass
+    for converter in (int, float):
+        try:
+            return converter(value_str)
+        except (ValueError, TypeError):
+            continue
+    return value_str
+
+
+def _get_ground_truth_params(pdk_module: str) -> dict:
     """Fetch real GDSFactory default settings for a PDK module.
 
-    Returns a dict of param_name -> value (stringified). Falls back to
-    an empty dict if GDSFactory instantiation fails.
+    Returns a dict of param_name -> value (preserving native types so
+    GDSFactory receives floats/ints rather than quoted strings in YAML).
+    Falls back to an empty dict if GDSFactory instantiation fails.
     """
     try:
         result = json.loads(get_module_params(pdk_module))
         if "error" in result:
             return {}
-        settings = result.get("settings", {})
-        return {k: str(v) for k, v in settings.items()}
+        return result.get("settings", {})
     except Exception:
         return {}
 
@@ -698,7 +728,9 @@ def _build_circuit_dsl(
             params = _get_ground_truth_params(mapping.pdk_module)
             for override in mapping.user_overrides:
                 if override.key in params:
-                    params[override.key] = override.value
+                    params[override.key] = _coerce_setting_value(
+                        override.value, params.get(override.key)
+                    )
             display = (comp.role.title() if comp.role else comp.description)
             nodes[comp.id] = {
                 "component": mapping.pdk_module,
@@ -905,6 +937,29 @@ def run_pipeline_reselect(
     client = OpenAI()
     design_intent = DesignIntent(**design_intent_dict)
 
+    # ── Topology Gate (Checkpoint A — Clingo) ────────────────────────
+    yield {"type": "pipeline_phase", "phase": "topology_gate"}
+    yield {"type": "phase", "phase": "topology_gate",
+           "detail": "Validating topology against architecture rules..."}
+
+    topo_feedback = validate_topology(design_intent)
+    if topo_feedback:
+        topo_fundamental = [f for f in topo_feedback if f.severity == "fundamental"]
+        yield {"type": "feedback", "source": "topology_gate",
+               "issues": [f.model_dump() for f in topo_feedback]}
+        if topo_fundamental:
+            yield {"type": "error",
+                   "message": (
+                       f"Topology validation found {len(topo_fundamental)} "
+                       f"fundamental issue(s) requiring interpreter revision."
+                   )}
+            return
+        yield {"type": "phase", "phase": "topology_gate",
+               "detail": "Topology gate: issues noted (non-blocking)."}
+    else:
+        yield {"type": "phase", "phase": "topology_gate",
+               "detail": "Topology gate passed (or skipped)."}
+
     yield {"type": "pipeline_phase", "phase": "component_reselection"}
     swap_ids = {s.component_id for s in component_swaps}
     yield {"type": "phase", "phase": "component_reselection",
@@ -1068,6 +1123,34 @@ def run_pipeline_reselect(
 # Main pipeline entry points
 # ---------------------------------------------------------------------------
 
+_MAX_VALIDATION_RETRIES = 2
+
+
+def _format_validation_feedback(
+    errors: list[PipelineFeedback],
+    gate_name: str,
+    attempt: int,
+    max_attempts: int,
+) -> str:
+    """Format validation errors into upstream feedback for the interpreter."""
+    items = "\n".join(
+        f"  - [{f.severity}] {f.description}"
+        + (f" (suggested: {f.suggested_action})" if f.suggested_action else "")
+        for f in errors
+    )
+    return (
+        f"VALIDATION FEEDBACK (attempt {attempt}/{max_attempts})\n"
+        f"{'=' * 50}\n"
+        f"The {gate_name} found the following issues with your DesignIntent:\n\n"
+        f"{items}\n\n"
+        f"You MUST revise the DesignIntent to fix these issues. Pay close\n"
+        f"attention to the component_type and role fields — Clingo rules\n"
+        f"count components by their functional role (splitter, combiner, etc.),\n"
+        f"not their device type (coupler, mmi, etc.).\n"
+        f"Re-investigate with your tools if needed."
+    )
+
+
 def run_pipeline_finalize(
     explore_state: dict,
     user_prompt: str,
@@ -1077,9 +1160,23 @@ def run_pipeline_finalize(
     max_critic_rounds: int = 2,
     schematic_feedback: Optional[str] = None,
 ) -> Generator[PipelineEvent, None, None]:
-    """Run from Phase 2 onward: finalize interpreter, then selector, then builder.
+    """Run from Phase 2 onward: extract → Clingo → critic → selector → builder.
 
     Called by Streamlit after the disambiguation stage.
+
+    The Clingo topology gate (Phase 2.5) runs **before** the critic
+    (Phase 3) so that egregious structural errors are caught cheaply
+    without spending tokens on the critic LLM.  If Clingo finds
+    fundamental issues, the interpreter is retried immediately; the
+    critic is only invoked on topologically valid designs.  The critic
+    retains full tool access and can still catch subtler topology
+    problems that the Clingo rules don't cover.
+
+    Includes an automatic retry loop: if the topology gate or component
+    selection fails with fundamental errors, the interpreter is re-invoked
+    with the error details as upstream feedback (up to ``_MAX_VALIDATION_RETRIES``
+    times).  If retries are exhausted, a ``validation_failed`` event is
+    yielded so the UI can offer user-guided recovery.
 
     Args:
         schematic_feedback: If provided, user feedback from the review gate.
@@ -1087,7 +1184,8 @@ def run_pipeline_finalize(
             addresses the requested changes.
 
     Yields events for each phase. The final event is either
-    ``{"type": "pipeline_done", ...}`` or ``{"type": "error", ...}``.
+    ``{"type": "pipeline_done", ...}`` or ``{"type": "error", ...}``
+    or ``{"type": "validation_failed", ...}`` (if retries exhaust).
     """
     client = OpenAI()
 
@@ -1102,58 +1200,161 @@ def run_pipeline_finalize(
             "revise the DesignIntent accordingly."
         )
 
-    # ── Phases 2-3: Finalize interpreter ──────────────────────────────
+    max_attempts = _MAX_VALIDATION_RETRIES + 1
     design_intent: Optional[DesignIntent] = None
-    for event in finalize_stream(
-        messages=explore_state["messages"],
-        tool_log=explore_state["tool_log"],
-        user_prompt=user_prompt,
-        extracted_dict=explore_state["extracted"],
-        model=model,
-        max_tool_rounds=max_tool_rounds,
-        max_critic_rounds=max_critic_rounds,
-        clarifications=clarifications,
-        upstream_feedback=upstream_fb,
-    ):
-        yield event
-        if event["type"] == "done":
-            design_intent = event["result"]
-
-    if design_intent is None:
-        yield {"type": "error", "message": "Interpreter failed to produce DesignIntent"}
-        return
-
-    # ── Phase 4: Component Selection ──────────────────────────────────
-    yield {"type": "pipeline_phase", "phase": "component_selection"}
-
     selection: Optional[ComponentSelection] = None
-    for event in _run_component_selection(client, design_intent, model):
-        yield event
-        if "_result" in event:
-            selection = event["_result"]
 
-    if selection is None:
-        yield {"type": "error", "message": "Component selection failed"}
-        return
+    for attempt in range(1, max_attempts + 1):
+        # ── Phase 2: Extract DesignIntent ─────────────────────────────
+        if attempt > 1:
+            yield {"type": "phase", "phase": "validation_retry",
+                   "detail": f"Retry {attempt - 1}/{_MAX_VALIDATION_RETRIES}: "
+                             f"re-running interpreter with validation feedback..."}
 
-    # ── Phase 4.75: Validate Selection ────────────────────────────────
-    sel_feedback = _validate_selection(selection, design_intent)
+        design_intent = None
+        for event in extract_design_intent(
+            messages=explore_state["messages"],
+            tool_log=explore_state["tool_log"],
+            extracted_dict=explore_state["extracted"],
+            model=model,
+            max_tool_rounds=max_tool_rounds,
+            clarifications=clarifications if attempt == 1 else None,
+            upstream_feedback=upstream_fb,
+            requirement_manifest_dict=explore_state.get("requirement_manifest"),
+        ):
+            yield event
+            if event["type"] == "done":
+                design_intent = event["result"]
+                explore_state = {
+                    **explore_state,
+                    "messages": event.get("messages", explore_state["messages"]),
+                }
 
-    fundamental = [f for f in sel_feedback if f.severity == "fundamental"]
-    if fundamental:
-        yield {"type": "feedback", "source": "component_selection",
-               "target": "interpreter",
-               "issues": [f.model_dump() for f in fundamental]}
-        yield {"type": "error",
-               "message": (
-                   f"Component selection has {len(fundamental)} fundamental "
-                   f"issue(s) that require interpreter revision."
-               )}
-        return
+        if design_intent is None:
+            yield {"type": "error", "message": "Interpreter failed to produce DesignIntent"}
+            return
 
-    if sel_feedback:
-        yield {"type": "feedback", "source": "component_selection",
-               "issues": [f.model_dump() for f in sel_feedback]}
+        # ── Phase 2.5: Topology Gate (Checkpoint A — Clingo) ──────────
+        # Run before the critic to catch egregious structural errors
+        # cheaply, avoiding expensive critic LLM calls on broken topology.
+        yield {"type": "pipeline_phase", "phase": "topology_gate"}
+        yield {"type": "phase", "phase": "topology_gate",
+               "detail": "Validating topology against architecture rules..."}
+
+        topo_feedback = validate_topology(design_intent)
+        if topo_feedback:
+            topo_fundamental = [f for f in topo_feedback if f.severity == "fundamental"]
+            yield {"type": "feedback", "source": "topology_gate",
+                   "issues": [f.model_dump() for f in topo_feedback]}
+            if topo_fundamental:
+                if attempt < max_attempts:
+                    upstream_fb = _format_validation_feedback(
+                        topo_fundamental, "topology gate (Clingo)",
+                        attempt, max_attempts,
+                    )
+                    continue  # retry — skip the critic entirely
+                yield {"type": "validation_failed",
+                       "gate": "topology_gate",
+                       "issues": [f.model_dump() for f in topo_fundamental],
+                       "design_intent": design_intent.model_dump(),
+                       "attempts": attempt,
+                       "message": (
+                           f"Topology validation still has {len(topo_fundamental)} "
+                           f"fundamental issue(s) after {_MAX_VALIDATION_RETRIES} "
+                           f"retry(ies)."
+                       )}
+                return
+            yield {"type": "phase", "phase": "topology_gate",
+                   "detail": "Topology gate: issues noted (non-blocking)."}
+        else:
+            yield {"type": "phase", "phase": "topology_gate",
+                   "detail": "Topology gate passed (or skipped)."}
+
+        # ── Phase 3: Critic Review ────────────────────────────────────
+        # Only reached when Clingo found no fundamental topology issues.
+        # The critic still has full tool access and can catch subtler
+        # topology problems that Clingo rules don't cover.
+        for event in run_critic_review(
+            user_prompt=user_prompt,
+            extracted_dict=explore_state["extracted"],
+            design_intent=design_intent,
+            messages=explore_state["messages"],
+            model=model,
+            max_critic_rounds=max_critic_rounds,
+            max_tool_rounds=max_tool_rounds,
+            clarifications=clarifications if attempt == 1 else None,
+        ):
+            yield event
+            if event["type"] == "done":
+                design_intent = event["result"]
+                explore_state = {
+                    **explore_state,
+                    "messages": event.get("messages", explore_state["messages"]),
+                }
+
+        # ── Phase 4: Component Selection ──────────────────────────────
+        yield {"type": "pipeline_phase", "phase": "component_selection"}
+
+        selection = None
+        for event in _run_component_selection(client, design_intent, model):
+            yield event
+            if "_result" in event:
+                selection = event["_result"]
+
+        if selection is None:
+            no_selection_error = PipelineFeedback(
+                severity="fundamental",
+                description="Component selection failed to produce any mappings.",
+                suggested_action="Ensure every ComponentIntent has a clear "
+                                 "component_type and role that maps to a PDK module.",
+            )
+            if attempt < max_attempts:
+                upstream_fb = _format_validation_feedback(
+                    [no_selection_error],
+                    "component selection", attempt, max_attempts,
+                )
+                continue
+            yield {"type": "validation_failed",
+                   "gate": "component_selection",
+                   "issues": [no_selection_error.model_dump()],
+                   "design_intent": design_intent.model_dump(),
+                   "attempts": attempt,
+                   "message": "Component selection produced no mappings after retries."}
+            return
+
+        # ── Phase 4.75: Validate Selection ────────────────────────────
+        sel_feedback = _validate_selection(selection, design_intent)
+
+        sel_fundamental = [f for f in sel_feedback if f.severity == "fundamental"]
+        if sel_fundamental:
+            print(f"── Selection gate: {len(sel_fundamental)} fundamental "
+                  f"issue(s), attempt {attempt}/{max_attempts} ──")
+            yield {"type": "feedback", "source": "component_selection",
+                   "target": "interpreter",
+                   "issues": [f.model_dump() for f in sel_fundamental]}
+            if attempt < max_attempts:
+                upstream_fb = _format_validation_feedback(
+                    sel_fundamental, "component selection validation",
+                    attempt, max_attempts,
+                )
+                continue  # retry
+            print("── Yielding validation_failed for component_selection ──")
+            yield {"type": "validation_failed",
+                   "gate": "component_selection",
+                   "issues": [f.model_dump() for f in sel_fundamental],
+                   "design_intent": design_intent.model_dump(),
+                   "attempts": attempt,
+                   "message": (
+                       f"Component selection has {len(sel_fundamental)} fundamental "
+                       f"issue(s) after {_MAX_VALIDATION_RETRIES} retry(ies)."
+                   )}
+            return
+
+        if sel_feedback:
+            yield {"type": "feedback", "source": "component_selection",
+                   "issues": [f.model_dump() for f in sel_feedback]}
+
+        break  # all gates passed, exit retry loop
 
     # ── Phase 4.8: LLM Compliance Check ──────────────────────────────
     yield {"type": "pipeline_phase", "phase": "compliance_check"}
@@ -1191,6 +1392,21 @@ def run_pipeline_finalize(
     yield {"type": "dot_draft", "dot": dot_no_edges}
 
     preschematic = design_intent.to_dot()
+
+    # ── Phase 5.25: AR Parameter Gate (Checkpoint B) ──────────────────
+    yield {"type": "pipeline_phase", "phase": "ar_parameter_gate"}
+    yield {"type": "phase", "phase": "ar_parameter_gate",
+           "detail": "Validating component parameters against AR policy..."}
+
+    ar_param_feedback = validate_parameters(circuit_dsl)
+    if ar_param_feedback:
+        yield {"type": "feedback", "source": "ar_parameter_gate",
+               "issues": [f.model_dump() for f in ar_param_feedback]}
+        yield {"type": "phase", "phase": "ar_parameter_gate",
+               "detail": "AR parameter gate: issues detected (non-blocking)."}
+    else:
+        yield {"type": "phase", "phase": "ar_parameter_gate",
+               "detail": "AR parameter gate passed (or skipped)."}
 
     # ── Phase 5b: LLM Edge Routing ───────────────────────────────────
     dot_with_edges: Optional[str] = None
@@ -1371,6 +1587,7 @@ def run_layout_simulation(
 
     routing_ok = gds_result.get("routing_ok", False)
     missing = gds_result.get("missing_models", [])
+    routing_warnings = gds_result.get("routing_warnings", [])
     if not routing_ok:
         yield {"type": "phase", "phase": "layout_gds",
                "detail": "Optical routing failed — layout rendered without links."}
@@ -1379,7 +1596,9 @@ def run_layout_simulation(
                "detail": f"Missing SAX models: {', '.join(missing[:5])}"}
 
     yield {"type": "gds_rendered", "gds_fig_b64": gds_result["gds_fig_b64"],
-           "routing_ok": routing_ok, "missing_models": missing}
+           "routing_ok": routing_ok, "missing_models": missing,
+           "routing_error": gds_result.get("routing_error", ""),
+           "routing_warnings": routing_warnings}
 
     yield {"type": "pipeline_phase", "phase": "simulation"}
     yield {"type": "phase", "phase": "simulation",

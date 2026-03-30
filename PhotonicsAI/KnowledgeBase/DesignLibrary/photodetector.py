@@ -6,6 +6,7 @@ Description: This is a design for a germanium photodetector
 ports: 1x1
 NodeLabels:
     - active
+aka: photodetector, detector, PD, photodiode, Ge photodetector, germanium photodetector
 Bandwidth: 100 nm
 Args:
     -length: straight length (um)

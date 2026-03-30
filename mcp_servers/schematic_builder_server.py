@@ -55,8 +55,9 @@ def circuit_dsl_to_dot(circuit_dsl_json: str) -> str:
 
         display_name = display_name.replace('"', '\\"')
 
-        if "x" in ports_info:
-            inp, out = map(int, ports_info.split("x"))
+        port_match = re.match(r"^(\d+)x(\d+)$", ports_info.strip()) if ports_info else None
+        if port_match:
+            inp, out = int(port_match.group(1)), int(port_match.group(2))
             input_labels = "|".join(
                 f"<o{i}> o{i}" for i in range(inp, 0, -1)
             ) if inp > 0 else ""
@@ -196,17 +197,25 @@ def compute_layout(dot_string: str, footprints_json: str) -> str:
 
         # Run layout
         graph = pgv.AGraph(string=sized_dot)
-        graph.graph_attr["nodesep"] = ".05"
-        graph.graph_attr["ranksep"] = ".05"
+        graph.graph_attr["nodesep"] = "0.15"
+        graph.graph_attr["ranksep"] = "0.25"
         graph.layout(prog="dot")
 
-        # Extract positions (center of node)
+        # Extract positions (center of node).
+        # Graphviz returns positions in points (1/72 inch). Node sizes were
+        # injected in inches (microns * 0.01), so the coordinate space is
+        # effectively points.  GDSFactory placements are in microns, so we
+        # convert:  points * (100/72)  ≈  microns.
+        POINTS_TO_MICRONS = 100.0 / 72.0
         positions = {}
         for node in graph.nodes():
             pos = node.attr.get("pos")
             if pos:
                 x, y = map(float, pos.split(","))
-                positions[str(node)] = {"x": x, "y": y}
+                positions[str(node)] = {
+                    "x": round(x * POINTS_TO_MICRONS, 3),
+                    "y": round(y * POINTS_TO_MICRONS, 3),
+                }
 
         return json.dumps({
             "positions": positions,
@@ -287,11 +296,28 @@ def export_gf_netlist(circuit_dsl_json: str) -> str:
                 "settings": info.get("params", {}),
             }
 
-        links = {}
+        # Group links by component pair so route_bundle handles each
+        # pair independently instead of tangling all routes together.
+        pair_links: dict[tuple[str, str], dict[str, str]] = {}
         for _edge_id, edge_info in circuit_dsl.get("edges", {}).items():
             link = edge_info["link"]
             source, target = link.split(": ")
-            links[source] = target
+            src_inst = source.split(",")[0]
+            tgt_inst = target.split(",")[0]
+            pair_key = (min(src_inst, tgt_inst), max(src_inst, tgt_inst))
+            pair_links.setdefault(pair_key, {})[source] = target
+
+        routes = {}
+        route_settings = {
+            "cross_section": "strip",
+            "on_collision": "error",
+            "sort_ports": True,
+        }
+        for i, ((inst_a, inst_b), links) in enumerate(pair_links.items()):
+            routes[f"optical_{inst_a}_{inst_b}"] = {
+                "settings": route_settings,
+                "links": links,
+            }
 
         placements = {}
         for node_id, info in circuit_dsl["nodes"].items():
@@ -304,7 +330,7 @@ def export_gf_netlist(circuit_dsl_json: str) -> str:
 
         gf_netlist = {
             "instances": instances,
-            "routes": {"optical": {"links": links}},
+            "routes": routes,
             "placements": placements,
             "ports": circuit_dsl.get("ports", {}),
         }

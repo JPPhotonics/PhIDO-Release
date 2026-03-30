@@ -141,13 +141,58 @@ def render_gds_layout(gf_netlist_yaml: str) -> dict:
     data_clean = _clean_netlist_data(dict(data), ignore_links=False)
     netlist_str = yaml.dump(data_clean, default_flow_style=False, sort_keys=False)
 
+    routing_warnings: list[str] = []
+    routing_error_detail = ""
+
+    links_count = 0
+    for _rname, rdata in data_clean.get("routes", {}).items():
+        links_count += len(rdata.get("links", {}))
+
     try:
         c = _gf.read.from_yaml(netlist_str)
-    except Exception:
+    except RuntimeError as collision_exc:
+        if "collision" in str(collision_exc).lower():
+            routing_warnings.append(
+                f"Routing collision detected: {collision_exc}. "
+                "Routes are drawn but may overlap component bounding boxes. "
+                "This is cosmetic and does not affect simulation accuracy."
+            )
+            for route_bundle in data_clean.get("routes", {}).values():
+                if isinstance(route_bundle, dict) and "settings" in route_bundle:
+                    route_bundle["settings"]["on_collision"] = None
+            netlist_str = yaml.dump(data_clean, default_flow_style=False, sort_keys=False)
+            c = _gf.read.from_yaml(netlist_str)
+            routing_ok = True
+        else:
+            raise
+    except Exception as routing_exc:
+        import traceback
+        routing_error_detail = str(routing_exc)
+        traceback.print_exc()
+        routing_warnings.append(
+            f"Routing failed ({type(routing_exc).__name__}): {routing_exc}. "
+            "Layout rendered without optical routes."
+        )
         data_clean = _clean_netlist_data(dict(data), ignore_links=True)
         netlist_str = yaml.dump(data_clean, default_flow_style=False, sort_keys=False)
-        c = _gf.read.from_yaml(netlist_str)
+        try:
+            c = _gf.read.from_yaml(netlist_str)
+        except Exception:
+            traceback.print_exc()
+            raise
         routing_ok = False
+
+    try:
+        flat_netlist = c.get_netlist(recursive=False)
+        conn_count = len(flat_netlist.get("connections", {}))
+        route_count = len(flat_netlist.get("routes", {}))
+        if links_count > 0 and conn_count == 0 and route_count == 0 and routing_ok:
+            routing_warnings.append(
+                f"Expected {links_count} routed connections but "
+                "the generated component has none."
+            )
+    except Exception:
+        pass
 
     try:
         recursive_netlist = c.get_netlist(recursive=True)
@@ -172,12 +217,16 @@ def render_gds_layout(gf_netlist_yaml: str) -> dict:
     _cached_sax_circuit = _circuit
     _cached_netlist_hash = hash(gf_netlist_yaml)
 
-    return {
+    result = {
         "gds_fig_b64": gds_b64,
         "required_models": required_models,
         "missing_models": missing,
         "routing_ok": routing_ok,
+        "routing_warnings": routing_warnings,
     }
+    if routing_error_detail:
+        result["routing_error"] = routing_error_detail
+    return result
 
 
 def run_sax_simulation(

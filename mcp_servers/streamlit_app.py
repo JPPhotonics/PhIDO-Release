@@ -65,16 +65,41 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown(
+
+    reasoning_strategy = st.radio(
+        "Reasoning strategy",
+        options=["balanced", "kg_first", "pdk_first"],
+        index=0,
+        format_func=lambda x: {
+            "balanced": "Balanced (default)",
+            "kg_first": "KG-first",
+            "pdk_first": "PDK-first",
+        }[x],
+        help=(
+            "**Balanced**: Agent freely decides when to use KG vs PDK tools.\n\n"
+            "**KG-first**: Agent starts by querying the Knowledge Graph for domain "
+            "understanding, then maps findings to PDK components.\n\n"
+            "**PDK-first**: Agent starts by searching the PDK catalog directly, "
+            "only consulting the KG when PDK results are ambiguous."
+        ),
+    )
+
+    st.markdown("---")
+    tools_md = (
         "**Tools available:**\n"
         "- `search_pdk` — PDK component search\n"
         "- `validate_ports` — port config check\n"
         "- `get_component_info` — full PDK details\n"
+        "- `get_module_params` — GDSFactory parameters\n"
         "- `search_knowledge_graph` — KG semantic search\n"
         "- `resolve_function` — function → components\n"
         "- `get_concept_neighborhood` — KG graph traversal\n"
-        "- `get_component_properties` — KG properties"
+        "- `get_component_properties` — KG properties\n"
+        "- `get_pdk_implementations` — KG concept → PDK cells\n"
+        "- `get_pdk_cell_details` — full KG details for a PDK cell\n"
+        "- `search_pdk_by_function` — function → PDK cells"
     )
+    st.markdown(tools_md)
 
 # ---------------------------------------------------------------------------
 # Main area — prompt input
@@ -94,7 +119,7 @@ run_btn = st.button("Interpret", type="primary", disabled=not prompt.strip())
 # ---------------------------------------------------------------------------
 _DEFAULTS = {
     "stage": "initial",          # initial | exploring | disambiguating | finalizing
-                                 # | reviewing | patching | simulating | done
+                                 # | error_review | reviewing | patching | simulating | done
     "design_intent": None,
     "dot_string": None,
     "preschematic_dot": None,
@@ -117,6 +142,8 @@ _DEFAULTS = {
     "footprints": None,
     "positions": None,
     "_edge_patches": None,
+    # Validation failure state for error_review stage
+    "validation_failed_event": None,
 }
 for key, default in _DEFAULTS.items():
     if key not in st.session_state:
@@ -130,9 +157,13 @@ PHASE_LABELS = {
     "grounding":            "KG Grounding Gate",
     "disambiguation":       "Disambiguation",
     "clarification_update": "Clarification Update",
+    "strategy":             "Reasoning Strategy",
     "upstream_feedback":    "Upstream Feedback",
     "structuring":          "Structured Output",
     "critic":               "Critic Review",
+    # Topology Gate
+    "topology_gate":        "Topology Validation",
+    "validation_retry":     "Validation Retry",
     # Component Selection
     "component_selection":  "Component Selection",
     "compliance_check":     "Compliance Check",
@@ -315,6 +346,11 @@ def _render_events(event_stream, status_widget):
         elif etype == "gds_rendered":
             routing = "with" if event.get("routing_ok") else "without"
             st.write(f"**GDS layout rendered** ({routing} optical routing).")
+            for warn_msg in event.get("routing_warnings", []):
+                if event.get("routing_ok"):
+                    st.info(warn_msg)
+                else:
+                    st.warning(warn_msg)
 
         elif etype == "layout_sim_done":
             result = event.get("result", {})
@@ -329,11 +365,36 @@ def _render_events(event_stream, status_widget):
                 expanded=False,
             )
 
+        elif etype == "validation_retry":
+            st.info(event.get("detail", "Retrying interpreter with validation feedback..."))
+
+        elif etype == "validation_failed":
+            st.session_state.validation_failed_event = event
+            st.session_state.stage = "error_review"
+            st.session_state.pipeline_finalize = False
+            status_widget.update(
+                label="Validation failed — review needed",
+                state="error",
+                expanded=False,
+            )
+            st.rerun()
+
         elif etype == "error":
             st.error(event["message"])
-            status_widget.update(label="Failed", state="error")
             if st.session_state.get("pipeline_finalize"):
+                st.session_state.validation_failed_event = {
+                    "gate": "pipeline",
+                    "issues": [{"severity": "fundamental",
+                                "description": event["message"]}],
+                    "attempts": 0,
+                    "message": event["message"],
+                }
+                st.session_state.stage = "error_review"
                 st.session_state.pipeline_finalize = False
+                status_widget.update(label="Failed — review needed", state="error")
+                st.rerun()
+            else:
+                status_widget.update(label="Failed", state="error")
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +418,7 @@ if st.session_state.stage == "exploring":
                 model=model,
                 max_tool_rounds=max_rounds,
                 max_grounding_rounds=max_grounding,
+                reasoning_strategy=reasoning_strategy,
             ),
             status_widget,
         )
@@ -484,6 +546,8 @@ if st.session_state.stage == "finalizing":
         label += f" (with {len(clarifications)} clarification(s))"
     label += "..."
 
+    feedback_for_retry = st.session_state.get("schematic_feedback")
+
     st.session_state.pipeline_finalize = True
     with st.status(label, expanded=True) as status_widget:
         _render_events(
@@ -494,12 +558,82 @@ if st.session_state.stage == "finalizing":
                 clarifications=clarifications,
                 max_tool_rounds=max_rounds,
                 max_critic_rounds=max_critic,
+                schematic_feedback=feedback_for_retry,
             ),
             status_widget,
         )
+    st.session_state.schematic_feedback = None
 
-    if st.session_state.stage == "reviewing":
+    if st.session_state.stage in ("reviewing", "error_review"):
         st.rerun()
+
+# ---------------------------------------------------------------------------
+# Stage: ERROR_REVIEW — validation failed after retries; let user help
+# ---------------------------------------------------------------------------
+if st.session_state.stage == "error_review":
+    st.markdown("---")
+    st.header("Validation Failed")
+
+    vf = st.session_state.get("validation_failed_event", {})
+    gate = vf.get("gate", "unknown gate")
+    attempts = vf.get("attempts", 0)
+    issues = vf.get("issues", [])
+
+    st.error(
+        f"The **{gate.replace('_', ' ')}** found fundamental issues that "
+        f"could not be resolved after **{attempts}** attempt(s)."
+    )
+
+    if issues:
+        st.subheader("Issues")
+        for iss in issues:
+            severity = iss.get("severity", "?")
+            desc = iss.get("description", "")
+            affected = ", ".join(iss.get("affected_components", [])) or "global"
+            suggestion = iss.get("suggested_action", "")
+            st.markdown(f"- **[{severity}]** {desc} — _Affects: {affected}_")
+            if suggestion:
+                st.markdown(f"  - Suggestion: {suggestion}")
+
+    st.subheader("What would you like to do?")
+
+    with st.form("error_review_form"):
+        guidance = st.text_area(
+            "Provide guidance to help the interpreter fix the issues "
+            "(or leave blank to start over with a new prompt):",
+            height=100,
+            placeholder="e.g. 'The splitter should use a directional coupler, "
+                        "make sure each arm has a phase shifter'",
+        )
+
+        col_retry, col_restart = st.columns(2)
+        with col_retry:
+            retry_btn = st.form_submit_button(
+                "Retry with guidance", type="primary",
+                disabled=False,
+            )
+        with col_restart:
+            restart_btn = st.form_submit_button("Start over")
+
+        if retry_btn and guidance.strip():
+            user_guidance = (
+                "USER GUIDANCE FOR VALIDATION FAILURE\n"
+                "====================================\n"
+                f"The {gate.replace('_', ' ')} failed with these issues:\n"
+                + "\n".join(f"  - {iss.get('description', '')}" for iss in issues)
+                + "\n\nThe user provided this guidance:\n"
+                f"{guidance}\n\n"
+                "You MUST address this feedback. Re-investigate with your tools "
+                "and revise the DesignIntent accordingly."
+            )
+            st.session_state.schematic_feedback = user_guidance
+            st.session_state.validation_failed_event = None
+            st.session_state.stage = "finalizing"
+            st.rerun()
+        elif restart_btn:
+            for key, default in _DEFAULTS.items():
+                st.session_state[key] = default
+            st.rerun()
 
 # ---------------------------------------------------------------------------
 # Stage: REVIEWING — user approves schematic or requests changes
@@ -935,5 +1069,9 @@ if di is not None:
                 st.markdown(f"[{i}] GDS rendered ({routing} routing)")
             elif etype == "layout_sim_done":
                 st.markdown(f"[{i}] Layout and simulation complete")
+            elif etype == "validation_retry":
+                st.markdown(f"[{i}] 🔄 {event.get('detail', 'Validation retry')}")
+            elif etype == "validation_failed":
+                st.markdown(f"[{i}] ❌ Validation failed: {event.get('message', '')}")
             elif etype == "error":
                 st.markdown(f"[{i}] ❌ {event['message']}")

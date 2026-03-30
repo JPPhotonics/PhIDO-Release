@@ -8,6 +8,7 @@ Description: >
 ports: 2x2
 NodeLabels:
     - passive
+aka: directional coupler, coupler, splitter, combiner, 2x2 coupler, DC, evanescent coupler
 Bandwidth: 50 nm
 Args:
     -gap: between straights in um.

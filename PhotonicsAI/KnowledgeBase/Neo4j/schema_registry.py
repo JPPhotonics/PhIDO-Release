@@ -21,20 +21,20 @@ class SchemaRegistry:
     _SEED_TYPES: List[Dict[str, Any]] = [
         {
             "name": "PERFORMS_FUNCTION",
-            "description": "Links a Component or Architecture to a Design_Function it performs",
-            "allowed_source_types": ["Component", "Architecture"],
+            "description": "Links a Component, Architecture, or PDK_Cell to a Design_Function it performs",
+            "allowed_source_types": ["Component", "Architecture", "PDK_Cell"],
             "allowed_target_types": ["Design_Function"],
         },
         {
             "name": "BASED_ON_PRINCIPLE",
-            "description": "Links a Component or Architecture to a Physical_Principle it is based on",
-            "allowed_source_types": ["Component", "Architecture"],
+            "description": "Links a Component, Architecture, or PDK_Cell to a Physical_Principle it is based on",
+            "allowed_source_types": ["Component", "Architecture", "PDK_Cell"],
             "allowed_target_types": ["Physical_Principle"],
         },
         {
             "name": "HAS_PROPERTY",
-            "description": "Links a Component or Architecture to a Property it possesses",
-            "allowed_source_types": ["Component", "Architecture"],
+            "description": "Links a Component, Architecture, or PDK_Cell to a Property it possesses",
+            "allowed_source_types": ["Component", "Architecture", "PDK_Cell"],
             "allowed_target_types": ["Property"],
         },
         {
@@ -54,6 +54,36 @@ class SchemaRegistry:
             "description": "Provenance link from an entity to the Document it was extracted from",
             "allowed_source_types": ["*"],
             "allowed_target_types": ["Document"],
+        },
+        {
+            "name": "IMPLEMENTS",
+            "description": "Links a concrete PDK cell to the abstract component it implements",
+            "allowed_source_types": ["PDK_Cell"],
+            "allowed_target_types": ["Component"],
+        },
+        {
+            "name": "COMPOSED_OF",
+            "description": "Layout composition: a PDK cell contains instances of another PDK cell",
+            "allowed_source_types": ["PDK_Cell"],
+            "allowed_target_types": ["PDK_Cell"],
+        },
+        {
+            "name": "EXHIBITS",
+            "description": "A PDK cell exhibits a measured property with a specific value",
+            "allowed_source_types": ["PDK_Cell"],
+            "allowed_target_types": ["Property"],
+        },
+        {
+            "name": "FABRICATED_WITH",
+            "description": "Links a PDK cell to the physical principle/technology it uses",
+            "allowed_source_types": ["PDK_Cell"],
+            "allowed_target_types": ["Physical_Principle"],
+        },
+        {
+            "name": "SUPERSEDES",
+            "description": "Version history link from current to previous PDK cell snapshot",
+            "allowed_source_types": ["PDK_Cell"],
+            "allowed_target_types": ["PDK_Cell_History"],
         },
     ]
 
