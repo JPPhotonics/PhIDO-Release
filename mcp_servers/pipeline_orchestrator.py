@@ -1571,6 +1571,7 @@ def run_layout_simulation(
     """
     from mcp_servers.layout_sim_server import (
         render_gds_layout,
+        run_drc_check,
         run_sax_simulation,
         write_gds_file,
     )
@@ -1626,6 +1627,31 @@ def run_layout_simulation(
 
     gds_file = write_gds_file(gf_netlist_yaml, filename="circuit_output")
 
+    # Phase 8c — Design Rule Check on the written GDS.
+    yield {"type": "pipeline_phase", "phase": "drc"}
+    yield {"type": "phase", "phase": "drc", "detail": "Running KLayout DRC..."}
+
+    drc_result = {"drc_ran": False, "drc_clean": None, "violations": -1,
+                  "report_path": "", "error": None}
+    if gds_file.get("success") and gds_file.get("gds_path"):
+        try:
+            drc_result = run_drc_check(gds_file["gds_path"])
+        except Exception as exc:
+            drc_result["error"] = f"DRC check failed: {exc}"
+        if drc_result.get("error"):
+            yield {"type": "phase", "phase": "drc",
+                   "detail": f"DRC could not complete: {drc_result['error']}"}
+        elif drc_result.get("drc_clean"):
+            yield {"type": "phase", "phase": "drc",
+                   "detail": "DRC clean — no violations."}
+        else:
+            yield {"type": "phase", "phase": "drc",
+                   "detail": f"DRC found {drc_result.get('violations')} violation(s)."}
+    else:
+        drc_result["error"] = "GDS not written; DRC skipped."
+        yield {"type": "phase", "phase": "drc",
+               "detail": "GDS not written — DRC skipped."}
+
     yield {"type": "layout_sim_done", "result": {
         "gds_fig_b64": gds_result.get("gds_fig_b64", ""),
         "sax_fig_b64": sim_result.get("sax_fig_b64", ""),
@@ -1636,6 +1662,10 @@ def run_layout_simulation(
         "gds_write_ok": gds_file.get("success", False),
         "routing_ok": routing_ok,
         "missing_models": missing,
+        "drc_clean": drc_result.get("drc_clean"),
+        "drc_violations": drc_result.get("violations"),
+        "drc_report_path": drc_result.get("report_path", ""),
+        "drc_error": drc_result.get("error"),
     }}
 
 
