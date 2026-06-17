@@ -194,6 +194,9 @@ _DEFAULTS = {
     "sax_fig_b64": None,
     "s_params_json": None,
     "gds_file_path": None,
+    "drc_clean": None,
+    "drc_violations": None,
+    "drc_report_path": None,
     "schematic_feedback": None,
     "live_circuit_dot": None,
     # Intermediate state for tiered feedback
@@ -248,6 +251,7 @@ PHASE_LABELS = {
     "visual_critic":        "Visual Schematic Review",
     # Unified orchestration
     "unified_session":      "Unified Session",
+    "drc":                  "Design Rule Check (DRC)",
     # Generic fallback
     "pipeline_phase":       "Pipeline",
 }
@@ -470,6 +474,20 @@ def _render_events(event_stream, status_widget, graph_placeholder=None):
             st.session_state.sax_fig_b64 = result.get("sax_fig_b64")
             st.session_state.s_params_json = result.get("s_params")
             st.session_state.gds_file_path = result.get("gds_file_path")
+            st.session_state.drc_clean = result.get("drc_clean")
+            st.session_state.drc_violations = result.get("drc_violations")
+            st.session_state.drc_report_path = result.get("drc_report_path")
+            drc_clean = result.get("drc_clean")
+            drc_error = result.get("drc_error")
+            if drc_clean is True:
+                st.success("**DRC clean** — no design-rule violations.")
+            elif drc_clean is False:
+                st.warning(
+                    f"**DRC found {result.get('drc_violations')} violation(s)** — "
+                    "see the report database for details."
+                )
+            elif drc_error:
+                st.info(f"DRC not conclusive: {drc_error}")
             st.session_state.stage = "done"
             status_widget.update(
                 label="Layout and simulation complete",
@@ -1304,7 +1322,15 @@ if di is not None:
                 routing = "with" if event.get("routing_ok") else "without"
                 st.markdown(f"[{i}] GDS rendered ({routing} routing)")
             elif etype == "layout_sim_done":
-                st.markdown(f"[{i}] Layout and simulation complete")
+                _res = event.get("result", {})
+                _drc = _res.get("drc_clean")
+                if _drc is True:
+                    _drc_txt = " — DRC clean"
+                elif _drc is False:
+                    _drc_txt = f" — DRC {_res.get('drc_violations')} violation(s)"
+                else:
+                    _drc_txt = ""
+                st.markdown(f"[{i}] Layout and simulation complete{_drc_txt}")
             elif etype == "circuit_updated":
                 n_c = event.get("component_count", 0)
                 n_e = event.get("connection_count", 0)

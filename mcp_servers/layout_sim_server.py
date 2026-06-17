@@ -8,6 +8,7 @@ Functions:
     render_gds_layout   — instantiate GDSFactory Component, plot layout, build SAX circuit
     run_sax_simulation  — wavelength sweep via SAX, plot S-parameters
     write_gds_file      — write Component to a .gds file with error-handling cascade
+    run_drc_check       — run KLayout DRC on a .gds and return a structured pass/fail
 """
 
 import base64
@@ -355,3 +356,79 @@ def write_gds_file(
             except Exception as final_exc:
                 return {"gds_path": "", "success": False, "error": str(final_exc)}
         return {"gds_path": "", "success": False, "error": str(exc)}
+
+
+def run_drc_check(gds_path: str, timeout: int = 120) -> dict:
+    """Run KLayout DRC on a GDS file and return a structured pass/fail result.
+
+    Wraps the same batch-mode KLayout DRC the baseline pipeline uses
+    (``PhotonicsAI/Photon/drc/drc_script.drc``) and parses the resulting
+    report database (.lydrb, an XML report-database with one ``<item>`` per
+    violation) so the agentic pipeline can emit a machine-readable signal.
+
+    Args:
+        gds_path: Path to the .gds file to check (from ``write_gds_file``).
+        timeout: KLayout subprocess timeout in seconds.
+
+    Returns a dict with:
+        drc_ran      — True if KLayout executed the DRC script
+        drc_clean    — True if zero violations, False if >0, None if undetermined
+        violations   — number of violation items (-1 if undetermined)
+        report_path  — path to the .lydrb report (empty if not produced)
+        error        — error string if DRC could not run, else None
+    """
+    import shutil
+    import subprocess
+    import xml.etree.ElementTree as ET
+
+    def _fail(error: str, ran: bool = False, report: str = "") -> dict:
+        return {"drc_ran": ran, "drc_clean": None, "violations": -1,
+                "report_path": report, "error": error}
+
+    drc_script = REPO_ROOT / "PhotonicsAI" / "Photon" / "drc" / "drc_script.drc"
+    report_path = BUILD_DIR / "report.lydrb"
+
+    if not gds_path or not Path(gds_path).exists():
+        return _fail(f"GDS file not found: {gds_path}")
+    if not drc_script.exists():
+        return _fail(f"DRC script not found: {drc_script}")
+
+    klayout = shutil.which("klayout") or next(
+        (p for p in ("/usr/bin/klayout", "/usr/local/bin/klayout",
+                     "/opt/klayout/bin/klayout") if Path(p).exists()),
+        None,
+    )
+    if klayout is None:
+        return _fail("KLayout executable not found on PATH")
+
+    try:
+        proc = subprocess.run(
+            [klayout, "-b", "-r", str(drc_script),
+             "-rd", f"input_gds={gds_path}", "-rd", f"report={report_path}"],
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return _fail(f"DRC timed out after {timeout}s")
+    except Exception as exc:
+        return _fail(f"DRC subprocess failed: {exc}")
+
+    if proc.returncode != 0:
+        return _fail(f"KLayout returned {proc.returncode}: {proc.stderr.strip()[:500]}")
+    if not report_path.exists():
+        return _fail("DRC ran but no report database was produced", ran=True)
+
+    try:
+        tree = ET.parse(report_path)
+        violations = sum(1 for _ in tree.getroot().iter("item"))
+    except ET.ParseError as exc:
+        return {"drc_ran": True, "drc_clean": None, "violations": -1,
+                "report_path": str(report_path),
+                "error": f"Could not parse DRC report: {exc}"}
+
+    return {
+        "drc_ran": True,
+        "drc_clean": violations == 0,
+        "violations": violations,
+        "report_path": str(report_path),
+        "error": None,
+    }
