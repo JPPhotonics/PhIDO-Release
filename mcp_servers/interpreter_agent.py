@@ -36,11 +36,12 @@ Usage:
 """
 
 import json
+import logging
 import os
 from typing import Any, Generator, Optional
 
 from pydantic import BaseModel, Field
-from openai import OpenAI
+from mcp_servers.llm_client import create_client, LLMClient
 from mcp_servers.models import (
     DesignIntent, ComponentIntent, Connection,
     ClarificationQuestion, ClarificationRequest,
@@ -90,25 +91,18 @@ Assign sequential IDs: R1, R2, R3, ...
 
 
 def _extract_requirements_llm(
-    client,
+    client: LLMClient,
     user_prompt: str,
-    model: str,
 ) -> RequirementManifest:
     """Phase 0.5: Extract structured requirements from the raw user prompt."""
     try:
-        response = client.beta.chat.completions.parse(
-            model=model,
-            messages=[
-                {"role": "system", "content": REQUIREMENT_EXTRACTION_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format=RequirementManifest,
+        manifest = client.complete_structured(
+            messages=[{"role": "user", "content": user_prompt}],
+            response_model=RequirementManifest,
+            system=REQUIREMENT_EXTRACTION_PROMPT,
         )
-        msg = response.choices[0].message
-        if msg.parsed:
-            manifest = msg.parsed
-            manifest.original_prompt = user_prompt
-            return manifest
+        manifest.original_prompt = user_prompt
+        return manifest
     except Exception:
         pass
     return RequirementManifest(original_prompt=user_prompt)
@@ -838,22 +832,17 @@ Rules:
 
 
 def _extract_concepts_llm(
-    client: OpenAI, user_prompt: str, model: str
+    client: LLMClient, user_prompt: str,
 ) -> ExtractedConcepts:
     """Use an LLM structured-output call to extract photonic concepts from the user prompt."""
-    response = client.beta.chat.completions.parse(
-        model=model,
-        messages=[
-            {"role": "system", "content": _CONCEPT_EXTRACTION_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        response_format=ExtractedConcepts,
-    )
-    msg = response.choices[0].message
-    if msg.parsed:
-        return msg.parsed
-    # Fallback: empty extraction if the model refuses
-    return ExtractedConcepts(components=[], parameters=[], specs=[])
+    try:
+        return client.complete_structured(
+            messages=[{"role": "user", "content": user_prompt}],
+            response_model=ExtractedConcepts,
+            system=_CONCEPT_EXTRACTION_PROMPT,
+        )
+    except Exception:
+        return ExtractedConcepts(components=[], parameters=[], specs=[])
 
 
 # Event type alias for streaming
@@ -861,11 +850,10 @@ AgentEvent = dict[str, Any]
 
 
 def _run_critic(
-    client: OpenAI,
+    client: LLMClient,
     user_prompt: str,
     extracted: ExtractedConcepts,
     design_intent: DesignIntent,
-    model: str,
     max_rounds: int = 10,
     clarifications: Optional[dict[str, str]] = None,
 ) -> Generator[AgentEvent, None, None]:
@@ -908,53 +896,37 @@ def _run_critic(
     critic_tool_log: list[tuple[str, dict]] = []
 
     for round_num in range(max_rounds):
-        response = client.chat.completions.create(
-            model=model,
-            messages=critic_messages,
-            tools=TOOLS if TOOLS else None,
-        )
-        choice = response.choices[0]
-        critic_messages.append(choice.message)
+        resp = client.complete(critic_messages, tools=TOOLS if TOOLS else None)
+        critic_messages.append(client.assistant_message(resp))
 
-        if choice.message.tool_calls:
+        if resp.tool_calls:
             yield {"type": "phase", "phase": "critic",
                    "detail": f"Critic round {round_num + 1}: "
-                             f"{len(choice.message.tool_calls)} tool call(s)"}
-            for tc in choice.message.tool_calls:
-                parsed_args, result = _execute_tool_raw(tc.function.name, tc.function.arguments)
-                critic_tool_log.append((tc.function.name, parsed_args))
+                             f"{len(resp.tool_calls)} tool call(s)"}
+            for tc in resp.tool_calls:
+                parsed_args, result = _execute_tool_raw(tc.name, tc.arguments)
+                critic_tool_log.append((tc.name, parsed_args))
 
-                yield {"type": "tool_call", "name": tc.function.name, "args": parsed_args}
-                yield {"type": "tool_result", "name": tc.function.name, "result": result}
+                yield {"type": "tool_call", "name": tc.name, "args": parsed_args}
+                yield {"type": "tool_result", "name": tc.name, "result": result}
 
-                critic_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result,
-                })
+                critic_messages.append(client.tool_result_message(tc, result))
         else:
-            # Critic finished reasoning — show its text
-            content = choice.message.content or ""
+            content = resp.content or ""
             if content.strip():
                 yield {"type": "agent_text", "content": content}
             break
 
-    # Now ask for the structured verdict
     critic_messages.append({
         "role": "user",
         "content": "Produce your structured CriticVerdict now."
     })
 
-    verdict_response = client.beta.chat.completions.parse(
-        model=model,
-        messages=critic_messages,
-        response_format=CriticVerdict,
-    )
-    verdict_msg = verdict_response.choices[0].message
-    if verdict_msg.parsed:
-        verdict = verdict_msg.parsed
-    else:
-        # Fallback: assume pass if the model refuses to produce a verdict
+    try:
+        verdict = client.complete_structured(
+            critic_messages, response_model=CriticVerdict,
+        )
+    except Exception:
         verdict = CriticVerdict(passed=True, issues=[], summary="Critic could not produce a verdict; assuming pass.")
 
     yield {"type": "critic", "verdict": verdict.model_dump(), "attempt": 0}
@@ -978,7 +950,7 @@ def _extract_kg_queried_concepts(tool_log: list[tuple[str, dict]]) -> set[str]:
 
 def explore_and_ask(
     user_prompt: str,
-    model: str = "o3-mini",
+    model: str = "gpt-5.4",
     max_tool_rounds: int = 15,
     max_grounding_rounds: int = 5,
     upstream_feedback: Optional[list[dict]] = None,
@@ -1001,7 +973,7 @@ def explore_and_ask(
         {"type": "clarification", "request": dict, "messages": list,
          "extracted": dict, "tool_log": list}
     """
-    client = OpenAI()
+    client = create_client(model)
     tool_log: list[tuple[str, dict]] = []
 
     # Build system prompt based on reasoning strategy
@@ -1040,7 +1012,7 @@ def explore_and_ask(
     yield {"type": "phase", "phase": "extraction",
            "detail": "Extracting photonic concepts from prompt..."}
 
-    extracted = _extract_concepts_llm(client, user_prompt, model)
+    extracted = _extract_concepts_llm(client, user_prompt)
 
     yield {"type": "concepts",
            "components": extracted.components,
@@ -1053,7 +1025,7 @@ def explore_and_ask(
     yield {"type": "phase", "phase": "requirement_extraction",
            "detail": "Extracting structured requirements from prompt..."}
 
-    requirement_manifest = _extract_requirements_llm(client, user_prompt, model)
+    requirement_manifest = _extract_requirements_llm(client, user_prompt)
     n_reqs = len(requirement_manifest.requirements)
 
     yield {"type": "phase", "phase": "requirement_extraction",
@@ -1066,31 +1038,22 @@ def explore_and_ask(
            "detail": f"Agent reasoning (max {max_tool_rounds} rounds)..."}
 
     for round_num in range(max_tool_rounds):
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=TOOLS if TOOLS else None,
-        )
-        choice = response.choices[0]
-        messages.append(choice.message)
+        resp = client.complete(messages, tools=TOOLS if TOOLS else None)
+        messages.append(client.assistant_message(resp))
 
-        if choice.message.tool_calls:
+        if resp.tool_calls:
             yield {"type": "phase", "phase": "exploration",
-                   "detail": f"Round {round_num + 1}: {len(choice.message.tool_calls)} tool call(s)"}
-            for tc in choice.message.tool_calls:
-                parsed_args, result = _execute_tool_raw(tc.function.name, tc.function.arguments)
-                tool_log.append((tc.function.name, parsed_args))
+                   "detail": f"Round {round_num + 1}: {len(resp.tool_calls)} tool call(s)"}
+            for tc in resp.tool_calls:
+                parsed_args, result = _execute_tool_raw(tc.name, tc.arguments)
+                tool_log.append((tc.name, parsed_args))
 
-                yield {"type": "tool_call", "name": tc.function.name, "args": parsed_args}
-                yield {"type": "tool_result", "name": tc.function.name, "result": result}
+                yield {"type": "tool_call", "name": tc.name, "args": parsed_args}
+                yield {"type": "tool_result", "name": tc.name, "result": result}
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result,
-                })
+                messages.append(client.tool_result_message(tc, result))
         else:
-            content = choice.message.content or ""
+            content = resp.content or ""
             yield {"type": "agent_text", "content": content}
             break
 
@@ -1116,30 +1079,21 @@ def explore_and_ask(
                    "detail": f"KG grounding gate triggered (max {max_grounding_rounds} rounds)..."}
 
             for ground_round in range(max_grounding_rounds):
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    tools=TOOLS if TOOLS else None,
-                )
-                choice = response.choices[0]
-                messages.append(choice.message)
+                resp = client.complete(messages, tools=TOOLS if TOOLS else None)
+                messages.append(client.assistant_message(resp))
 
-                if choice.message.tool_calls:
+                if resp.tool_calls:
                     yield {"type": "phase", "phase": "grounding",
                            "detail": f"Grounding round {ground_round + 1}: "
-                                     f"{len(choice.message.tool_calls)} tool call(s)"}
-                    for tc in choice.message.tool_calls:
-                        parsed_args, result = _execute_tool_raw(tc.function.name, tc.function.arguments)
-                        tool_log.append((tc.function.name, parsed_args))
-                        yield {"type": "tool_call", "name": tc.function.name, "args": parsed_args}
-                        yield {"type": "tool_result", "name": tc.function.name, "result": result}
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc.id,
-                            "content": result,
-                        })
+                                     f"{len(resp.tool_calls)} tool call(s)"}
+                    for tc in resp.tool_calls:
+                        parsed_args, result = _execute_tool_raw(tc.name, tc.arguments)
+                        tool_log.append((tc.name, parsed_args))
+                        yield {"type": "tool_call", "name": tc.name, "args": parsed_args}
+                        yield {"type": "tool_result", "name": tc.name, "result": result}
+                        messages.append(client.tool_result_message(tc, result))
                 else:
-                    content = choice.message.content or ""
+                    content = resp.content or ""
                     yield {"type": "agent_text", "content": content}
                     break
         else:
@@ -1169,15 +1123,11 @@ def explore_and_ask(
 
     messages.append({"role": "user", "content": DISAMBIGUATION_PROMPT})
 
-    disambig_response = client.beta.chat.completions.parse(
-        model=model,
-        messages=messages,
-        response_format=ClarificationRequest,
-    )
-    disambig_msg = disambig_response.choices[0].message
-    if disambig_msg.parsed:
-        clarification_req = disambig_msg.parsed
-    else:
+    try:
+        clarification_req = client.complete_structured(
+            messages, response_model=ClarificationRequest,
+        )
+    except Exception:
         clarification_req = ClarificationRequest(questions=[], ready_to_proceed=True)
 
     # Serialise messages for session state storage (ChatCompletionMessage → dict)
@@ -1194,13 +1144,30 @@ def explore_and_ask(
 
 
 def _serialise_messages(messages: list) -> list[dict]:
-    """Convert a message list to JSON-safe dicts (handles OpenAI objects)."""
+    """Convert a message list to JSON-safe dicts.
+
+    Handles OpenAI ChatCompletionMessage objects, Anthropic Message objects,
+    and raw dicts. Anything unrecognised is serialised best-effort.
+    """
     out = []
     for msg in messages:
         if isinstance(msg, dict):
             out.append(msg)
-        else:
-            d: dict = {"role": msg.role, "content": msg.content or ""}
+        elif hasattr(msg, "role") and hasattr(msg, "content"):
+            d: dict = {"role": getattr(msg, "role", "assistant")}
+            content = getattr(msg, "content", None)
+            if isinstance(content, str):
+                d["content"] = content
+            elif isinstance(content, list):
+                text_parts = []
+                for block in content:
+                    if hasattr(block, "text"):
+                        text_parts.append(block.text)
+                    elif hasattr(block, "type") and block.type == "text":
+                        text_parts.append(getattr(block, "text", ""))
+                d["content"] = "\n".join(text_parts) if text_parts else ""
+            else:
+                d["content"] = str(content) if content else ""
             if hasattr(msg, "tool_calls") and msg.tool_calls:
                 d["tool_calls"] = [
                     {
@@ -1213,6 +1180,8 @@ def _serialise_messages(messages: list) -> list[dict]:
             if hasattr(msg, "refusal") and msg.refusal:
                 d["refusal"] = msg.refusal
             out.append(d)
+        else:
+            out.append({"role": "assistant", "content": str(msg)})
     return out
 
 
@@ -1224,7 +1193,7 @@ def extract_design_intent(
     messages: list,
     tool_log: list[tuple[str, dict]],
     extracted_dict: dict,
-    model: str = "o3-mini",
+    model: str = "gpt-5.4",
     max_tool_rounds: int = 10,
     clarifications: Optional[dict[str, str]] = None,
     upstream_feedback: Optional[str] = None,
@@ -1255,7 +1224,7 @@ def extract_design_intent(
     requirement_manifest_dict : dict, optional
         Serialised ``RequirementManifest`` from Phase 0.5.
     """
-    client = OpenAI()
+    client = create_client(model)
     extracted = ExtractedConcepts(**extracted_dict)
     req_manifest: Optional[RequirementManifest] = None
     if requirement_manifest_dict:
@@ -1286,31 +1255,22 @@ def extract_design_intent(
                "detail": f"Injecting {len(clarifications)} clarification(s) and re-exploring..."}
 
         for round_num in range(max_tool_rounds):
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=TOOLS if TOOLS else None,
-            )
-            choice = response.choices[0]
-            messages.append(choice.message)
+            resp = client.complete(messages, tools=TOOLS if TOOLS else None)
+            messages.append(client.assistant_message(resp))
 
-            if choice.message.tool_calls:
+            if resp.tool_calls:
                 yield {"type": "phase", "phase": "clarification_update",
-                       "detail": f"Round {round_num + 1}: {len(choice.message.tool_calls)} tool call(s)"}
-                for tc in choice.message.tool_calls:
-                    parsed_args, result = _execute_tool_raw(tc.function.name, tc.function.arguments)
-                    tool_log.append((tc.function.name, parsed_args))
+                       "detail": f"Round {round_num + 1}: {len(resp.tool_calls)} tool call(s)"}
+                for tc in resp.tool_calls:
+                    parsed_args, result = _execute_tool_raw(tc.name, tc.arguments)
+                    tool_log.append((tc.name, parsed_args))
 
-                    yield {"type": "tool_call", "name": tc.function.name, "args": parsed_args}
-                    yield {"type": "tool_result", "name": tc.function.name, "result": result}
+                    yield {"type": "tool_call", "name": tc.name, "args": parsed_args}
+                    yield {"type": "tool_result", "name": tc.name, "result": result}
 
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": result,
-                    })
+                    messages.append(client.tool_result_message(tc, result))
             else:
-                content = choice.message.content or ""
+                content = resp.content or ""
                 if content.strip():
                     yield {"type": "agent_text", "content": content}
                 break
@@ -1331,17 +1291,13 @@ def extract_design_intent(
         )
     messages.append({"role": "user", "content": structuring_content})
 
-    structured_response = client.beta.chat.completions.parse(
-        model=model,
-        messages=messages,
-        response_format=DesignIntent,
-    )
-    struct_msg = structured_response.choices[0].message
-    if not struct_msg.parsed:
-        yield {"type": "error", "message": f"LLM refused to produce DesignIntent: {struct_msg.refusal}"}
+    try:
+        design_intent = client.complete_structured(
+            messages, response_model=DesignIntent,
+        )
+    except Exception as exc:
+        yield {"type": "error", "message": f"LLM refused to produce DesignIntent: {exc}"}
         return
-
-    design_intent = struct_msg.parsed
 
     serializable_messages = _serialise_messages(messages)
     yield {"type": "done", "result": design_intent, "messages": serializable_messages}
@@ -1352,7 +1308,7 @@ def run_critic_review(
     extracted_dict: dict,
     design_intent: DesignIntent,
     messages: list,
-    model: str = "o3-mini",
+    model: str = "gpt-5.4",
     max_critic_rounds: int = 2,
     max_tool_rounds: int = 10,
     clarifications: Optional[dict[str, str]] = None,
@@ -1383,7 +1339,7 @@ def run_critic_review(
     clarifications : dict, optional
         User clarifications (passed through to the critic for context).
     """
-    client = OpenAI()
+    client = create_client(model)
     extracted = ExtractedConcepts(**extracted_dict)
 
     current_intent = design_intent
@@ -1400,7 +1356,7 @@ def run_critic_review(
 
         critic_verdict: Optional[CriticVerdict] = None
         for critic_event in _run_critic(
-            client, user_prompt, extracted, current_intent, model,
+            client, user_prompt, extracted, current_intent,
             clarifications=clarifications,
         ):
             if critic_event["type"] == "critic":
@@ -1434,21 +1390,17 @@ def run_critic_review(
                "detail": f"Critic FAILED (attempt {attempt + 1}/{total_attempts}). "
                          f"{len(critic_verdict.issues)} issue(s). Retrying..."}
 
-        # Re-extract DesignIntent after critic feedback
         yield {"type": "phase", "phase": "structuring",
                "detail": f"Re-producing DesignIntent after critic feedback{attempt_label}..."}
 
-        structured_response = client.beta.chat.completions.parse(
-            model=model,
-            messages=messages,
-            response_format=DesignIntent,
-        )
-        struct_msg = structured_response.choices[0].message
-        if not struct_msg.parsed:
+        try:
+            current_intent = client.complete_structured(
+                messages, response_model=DesignIntent,
+            )
+        except Exception as exc:
             yield {"type": "error",
-                   "message": f"LLM refused to produce DesignIntent: {struct_msg.refusal}"}
+                   "message": f"LLM refused to produce DesignIntent: {exc}"}
             return
-        current_intent = struct_msg.parsed
 
     serializable_messages = _serialise_messages(messages)
     yield {"type": "done", "result": current_intent, "messages": serializable_messages}
@@ -1459,7 +1411,7 @@ def finalize_stream(
     tool_log: list[tuple[str, dict]],
     user_prompt: str,
     extracted_dict: dict,
-    model: str = "o3-mini",
+    model: str = "gpt-5.4",
     max_tool_rounds: int = 10,
     max_critic_rounds: int = 2,
     clarifications: Optional[dict[str, str]] = None,
@@ -1539,7 +1491,7 @@ def finalize_stream(
 
 def interpret_stream(
     user_prompt: str,
-    model: str = "o3-mini",
+    model: str = "gpt-5.4",
     max_tool_rounds: int = 15,
     max_grounding_rounds: int = 5,
     max_critic_rounds: int = 2,
@@ -1594,7 +1546,7 @@ def interpret_stream(
 
 def interpret(
     user_prompt: str,
-    model: str = "o3-mini",
+    model: str = "gpt-5.4",
     max_tool_rounds: int = 15,
     max_grounding_rounds: int = 5,
     max_critic_rounds: int = 2,
@@ -1662,6 +1614,712 @@ def interpret(
     if result is None:
         raise ValueError("interpret_stream ended without producing a DesignIntent")
     return result
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 (alt): Iterative circuit builder — tool-calling construction loop
+# ---------------------------------------------------------------------------
+
+from mcp_servers.circuit_graph import CircuitGraph
+from mcp_servers.pdk_catalog_server import CATALOG as _PDK_CATALOG
+
+_builder_log = logging.getLogger("phido.iterative_builder")
+_log_handler = logging.FileHandler("iterative_builder.log", mode="a")
+_log_handler.setFormatter(logging.Formatter(
+    "%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
+))
+_builder_log.addHandler(_log_handler)
+_builder_log.setLevel(logging.DEBUG)
+
+ITERATIVE_BUILD_PROMPT = """\
+You are a circuit-building agent. You construct photonic circuits EXCLUSIVELY by
+calling tools. You must NEVER describe what you would do in text — always call
+the tool directly. Every response you give MUST contain at least one tool call.
+
+CRITICAL: Do NOT write out plans, do NOT narrate future steps — just CALL the
+tool. Text-only responses are wasted rounds.
+
+GRID COORDINATES: Each component occupies a unique (stage, lane) position:
+  - stage = signal-flow axis (0 at the input, increasing rightward)
+  - lane  = cross-axis (0 at the top, increasing downward)
+
+PORT SPATIAL CONVENTION (GDSFactory standard — all PDK components follow this):
+  Inputs are on the LEFT, outputs on the RIGHT.
+
+  For 2x2 components (MZI, MMI 2x2, etc.):
+      o2 (top-left input)    ──┐        ┌── o3 (top-right output)
+                                │ device │
+      o1 (bottom-left input) ──┘        └── o4 (bottom-right output)
+
+    - o2 = TOP input,  o1 = BOTTOM input
+    - o3 = TOP output, o4 = BOTTOM output
+    - BAR paths:  o2 → o3 (top-to-top), o1 → o4 (bottom-to-bottom)
+    - CROSS paths: o1 → o3 (bottom-to-top), o2 → o4 (top-to-bottom)
+
+  For 1x2 components (MMI 1x2, splitter):
+      o1 (left input, center) ──┤  ├── o2 (top-right output)
+                                    └── o3 (bottom-right output)
+
+PHYSICAL LANE ALIGNMENT:
+  Each port has a physical_lane (returned by add_component and get_open_ports).
+  A 2x2 component at lane L occupies physical lanes L (top) and L+1 (bottom):
+    o2, o3 -> physical_lane L     (top ports)
+    o1, o4 -> physical_lane L+1   (bottom ports)
+
+  ALWAYS connect ports that share the same physical_lane when wiring between
+  stages. The add_component result includes a "connectable" field with
+  lane-aligned suggestions — USE THEM. Entries marked "same_lane" are the
+  correct connections.
+
+BUILDER TOOLS:
+  - add_component(component_type, port_config, stage, lane, ...): Place a component.
+    Returns assigned ID, port map, AND nearby open ports that can be connected.
+  - connect(from_component, from_port, to_component, to_port, ...): Wire two ports.
+    Enforces forward flow and stage adjacency by default.
+  - get_open_ports(): See unconnected ports grouped by stage — your build frontier.
+  - get_state(): Full circuit summary with grid, counts, port maps.
+  - replicate_stage(source_components, count, connect_from, connection_rule, ...):
+    Bulk-replicate components with automatic wiring. USE THIS for repeating
+    patterns — it places AND connects in one call.
+  - finalize(title, brief_summary, ...): Signal construction complete.
+
+You also have PDK tools (search_pdk, validate_ports, get_component_info,
+get_module_params) and KG tools to look up component details.
+
+## WORKFLOW — PLACE THEN WIRE, STAGE BY STAGE
+
+CRITICAL: A circuit with components but no connections is USELESS. You MUST
+connect components as you build. Follow this exact pattern:
+
+1. Look up the relevant PDK component(s) with search_pdk.
+2. Place the first stage of components using add_component.
+3. **IMMEDIATELY** connect them. Each add_component result shows nearby open
+   ports — use those hints. Include connect calls in the SAME round as
+   add_component calls whenever possible.
+4. Only move to the next stage AFTER the current stage is wired.
+5. Repeat steps 2-4 for each subsequent stage.
+6. Call finalize ONLY when all components are placed AND connected.
+
+For repeating structures (mesh columns, tree levels, cascaded filters), use
+replicate_stage — it places AND connects automatically.
+
+EFFICIENCY: Batch many tool calls per round. A good round looks like:
+  add_component(...) + add_component(...) + connect(...) + connect(...)
+NOT just add_component four times.
+
+RULES:
+- Port configs must be valid (e.g. "1x2", "2x2"). Use search_pdk to verify.
+- Connections go forward (source stage <= target stage) unless feedback=true.
+- NEVER connect a component to itself. Self-connections are physically
+  impossible and will be rejected. Always connect to a DIFFERENT component.
+- If a tool returns an error, read the message and adjust immediately.
+- NEVER respond with text only. ALWAYS call tools.
+- NEVER call finalize if there are still many unconnected ports. Check with
+  get_open_ports first — if there are open output ports at non-final stages,
+  you still have wiring to do.
+"""
+
+BUILDER_TOOLS: list[dict] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "add_component",
+            "description": (
+                "Place a photonic component at a specific (stage, lane) position. "
+                "Returns the auto-assigned ID and port map."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "component_type": {
+                        "type": "string",
+                        "description": "Canonical device type: splitter, combiner, mzm, "
+                                       "phase_shifter, ring_resonator, waveguide, coupler, "
+                                       "crossing, detector, grating_coupler",
+                    },
+                    "port_config": {
+                        "type": "string",
+                        "description": "Port configuration, e.g. '1x2', '2x2', '1x1'",
+                    },
+                    "stage": {"type": "integer", "description": "Signal-flow axis (0 = input)"},
+                    "lane": {"type": "integer", "description": "Cross axis (0 = top)"},
+                    "role": {
+                        "type": "string",
+                        "description": "Functional role in the circuit",
+                    },
+                    "sub_type": {
+                        "type": "string",
+                        "description": "Sub-type qualifier: mmi, directional_coupler, "
+                                       "add_drop, all_pass, 90_degree, heater, pin",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Brief description of this component instance",
+                    },
+                    "specs": {
+                        "type": "object",
+                        "description": "Key-value specs, e.g. {\"arm_length\": \"150um\"}",
+                    },
+                },
+                "required": ["component_type", "port_config", "stage", "lane"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "connect",
+            "description": (
+                "Connect two ports on different components. Enforces forward flow "
+                "and stage adjacency by default."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "from_component": {"type": "string", "description": "Source component ID (e.g. C1)"},
+                    "from_port": {"type": "string", "description": "Source port name (e.g. o2)"},
+                    "to_component": {"type": "string", "description": "Target component ID (e.g. C2)"},
+                    "to_port": {"type": "string", "description": "Target port name (e.g. o1)"},
+                    "description": {"type": "string", "description": "Connection description"},
+                    "feedback": {
+                        "type": "boolean", "default": False,
+                        "description": "Allow backward (feedback) connection",
+                    },
+                    "skip": {
+                        "type": "boolean", "default": False,
+                        "description": "Allow connection spanning >1 stage",
+                    },
+                },
+                "required": ["from_component", "from_port", "to_component", "to_port"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_open_ports",
+            "description": "Return all unconnected ports grouped by stage — the current build frontier.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_state",
+            "description": "Return a full summary of the circuit: grid layout, component counts, port maps.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "replicate_stage",
+            "description": (
+                "Bulk-replicate a set of source components. Creates count copies and "
+                "wires them according to connection_rule (one_to_one, broadcast, chain)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source_components": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": "Component IDs to use as template (e.g. ['C1'])",
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of copies per source component",
+                    },
+                    "connect_from": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": "Open port references to wire to new copies (e.g. ['C1.o2', 'C1.o3'])",
+                    },
+                    "connection_rule": {
+                        "type": "string", "enum": ["one_to_one", "broadcast", "chain"],
+                        "description": "How to wire connect_from ports to new components",
+                    },
+                    "start_stage": {
+                        "type": "integer",
+                        "description": "Override placement stage (default: auto from connect_from)",
+                    },
+                    "description": {"type": "string"},
+                },
+                "required": ["source_components", "count", "connect_from", "connection_rule"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "finalize",
+            "description": (
+                "Signal construction complete. Runs connectivity checks and returns "
+                "warnings. Call this when the circuit is fully built."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Circuit title"},
+                    "brief_summary": {"type": "string", "description": "< 150 word summary"},
+                    "architecture_type": {
+                        "type": "string",
+                        "description": "Primary architecture: mzi, splitter_tree, benes, "
+                                       "clements, reck, qpsk, wdm_demux, wdm_mux, etc.",
+                    },
+                    "n_value": {
+                        "type": "integer",
+                        "description": "Primary scaling parameter (port count, channel count)",
+                    },
+                },
+                "required": ["title", "brief_summary"],
+            },
+        },
+    },
+]
+
+# Merge builder + exploration tools so the LLM can still query PDK/KG
+_ALL_BUILDER_TOOLS = BUILDER_TOOLS + TOOLS
+
+_BUILDER_TOOL_NAMES = frozenset(t["function"]["name"] for t in BUILDER_TOOLS)
+
+
+def _dispatch_builder_tool(
+    name: str,
+    arguments: str,
+    graph: CircuitGraph,
+) -> str:
+    """Dispatch a tool call to either a CircuitGraph method or a PDK/KG tool."""
+    args = json.loads(arguments)
+
+    if name == "add_component":
+        result = graph.add_component(
+            component_type=args["component_type"],
+            port_config=args["port_config"],
+            stage=args["stage"],
+            lane=args["lane"],
+            role=args.get("role"),
+            sub_type=args.get("sub_type"),
+            description=args.get("description", ""),
+            specs=args.get("specs"),
+        )
+        return json.dumps(result, ensure_ascii=False)
+
+    elif name == "connect":
+        result = graph.connect(
+            from_component=args["from_component"],
+            from_port=args["from_port"],
+            to_component=args["to_component"],
+            to_port=args["to_port"],
+            description=args.get("description", ""),
+            feedback=args.get("feedback", False),
+            skip=args.get("skip", False),
+        )
+        return json.dumps(result, ensure_ascii=False)
+
+    elif name == "get_open_ports":
+        return json.dumps(graph.get_open_ports(), ensure_ascii=False)
+
+    elif name == "get_state":
+        return json.dumps(graph.get_state(), ensure_ascii=False)
+
+    elif name == "replicate_stage":
+        result = graph.replicate_stage(
+            source_components=args["source_components"],
+            count=args["count"],
+            connect_from=args["connect_from"],
+            connection_rule=args["connection_rule"],
+            start_stage=args.get("start_stage"),
+            description=args.get("description", ""),
+        )
+        return json.dumps(result, ensure_ascii=False)
+
+    elif name == "finalize":
+        result = graph.finalize(
+            title=args["title"],
+            brief_summary=args["brief_summary"],
+            architecture_type=args.get("architecture_type"),
+            n_value=args.get("n_value"),
+        )
+        return json.dumps(result, ensure_ascii=False)
+
+    else:
+        # Fall through to PDK/KG tools
+        fn = _TOOL_DISPATCH.get(name)
+        if fn is None:
+            return json.dumps({"error": f"Unknown tool: {name}"})
+        return fn(args)
+
+
+def build_circuit_iterative(
+    messages: list,
+    tool_log: list[tuple[str, dict]],
+    extracted_dict: dict,
+    model: str = "gpt-5.4",
+    max_rounds: int = 1000,
+    requirement_manifest_dict: Optional[dict] = None,
+    initial_graph: Optional[CircuitGraph] = None,
+) -> Generator[AgentEvent, None, None]:
+    """
+    Phase 2 (alt): Build a circuit via iterative tool calls on a CircuitGraph.
+
+    The LLM places and connects components one by one using builder tools,
+    with full access to PDK/KG tools for lookup. Each mutation yields a
+    ``circuit_updated`` event with a DOT string for live visualization.
+
+    If ``initial_graph`` is provided, the builder starts with a pre-populated
+    graph (e.g. from a deterministic topology generator) and lets the LLM
+    make targeted modifications rather than building from scratch.
+
+    Ends with ``{"type": "done", "result": DesignIntent, ...}``.
+    """
+    client = create_client(model)
+    graph = initial_graph or CircuitGraph(pdk_catalog=_PDK_CATALOG)
+
+    # Build context from exploration phase
+    extracted = ExtractedConcepts(**extracted_dict)
+    concept_summary = (
+        f"Components/architectures found: {', '.join(extracted.components) or 'none'}\n"
+        f"Parameters: {', '.join(extracted.parameters) or 'none'}\n"
+        f"Specs: {', '.join(extracted.specs) or 'none'}"
+    )
+
+    builder_messages: list = [
+        {"role": "system", "content": ITERATIVE_BUILD_PROMPT},
+    ]
+
+    # Carry forward the user prompt and exploration context
+    user_context_parts = []
+    for msg in messages:
+        if isinstance(msg, dict):
+            if msg.get("role") == "user" and msg.get("content"):
+                user_context_parts.append(msg["content"])
+        elif hasattr(msg, "role") and msg.role == "user" and msg.content:
+            user_context_parts.append(msg.content)
+
+    # Use the first user message as the design request
+    user_prompt = user_context_parts[0] if user_context_parts else ""
+
+    _builder_log.info("user_prompt extracted: %s", repr(user_prompt[:200]))
+    _builder_log.info("concept_summary: %s", concept_summary)
+    _builder_log.info("incoming messages: %d, user_context_parts: %d",
+                      len(messages), len(user_context_parts))
+    _builder_log.info("tools available: %d (%d builder + %d PDK/KG)",
+                      len(_ALL_BUILDER_TOOLS), len(BUILDER_TOOLS), len(TOOLS))
+
+    if not user_prompt:
+        yield {"type": "phase", "phase": "iterative_build",
+               "detail": "WARNING: No user prompt found in exploration messages!"}
+        _builder_log.warning("user_prompt is empty!")
+        for i, msg in enumerate(messages):
+            if isinstance(msg, dict):
+                role = msg.get("role", "?")
+                content_len = len(msg.get("content", "") or "")
+            else:
+                role = getattr(msg, "role", "?")
+                content_len = len(getattr(msg, "content", "") or "")
+            _builder_log.warning("  msg[%d] role=%s content_len=%d", i, role, content_len)
+
+    builder_messages.append({
+        "role": "user",
+        "content": (
+            f"## Design Request\n{user_prompt}\n\n"
+            f"## Concepts from Exploration\n{concept_summary}\n\n"
+            f"Build this circuit NOW by calling tools. Do NOT describe your plan — "
+            f"just start calling search_pdk and add_component immediately. "
+            f"Use replicate_stage for any repeating patterns (mesh columns, tree levels). "
+            f"Batch multiple tool calls per round for efficiency."
+        ),
+    })
+
+    yield {"type": "phase", "phase": "iterative_build",
+           "detail": "Starting iterative circuit construction..."}
+
+    finalized = False
+    consecutive_text_only = 0
+
+    _NUDGE_MILD = (
+        "Do NOT describe what you plan to do. CALL the tools directly. "
+        "Call add_component, connect, replicate_stage, get_open_ports, "
+        "or finalize right now."
+    )
+    _NUDGE_STRONG = (
+        "STOP WRITING TEXT. You have wasted multiple rounds narrating instead of "
+        "building. You MUST call tools in your next response. Call add_component "
+        "or replicate_stage to place components, connect to wire them, "
+        "get_open_ports to check the frontier, or finalize if complete. "
+        "Do NOT reply with text only — it will be rejected."
+    )
+
+    def _compact_messages(messages: list) -> list:
+        """Remove consecutive text-only assistant+user nudge pairs to keep context lean."""
+        compacted = []
+        i = 0
+        removed = 0
+        while i < len(messages):
+            msg = messages[i]
+            role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
+            has_tc = False
+            if not isinstance(msg, dict):
+                has_tc = bool(getattr(msg, "tool_calls", None))
+
+            if role == "assistant" and not has_tc:
+                # Check if next message is a user nudge
+                if (i + 1 < len(messages)
+                        and isinstance(messages[i + 1], dict)
+                        and messages[i + 1].get("role") == "user"
+                        and ("CALL the tools" in messages[i + 1].get("content", "")
+                             or "STOP WRITING TEXT" in messages[i + 1].get("content", ""))):
+                    removed += 1
+                    i += 2  # skip both
+                    continue
+            compacted.append(msg)
+            i += 1
+        if removed:
+            _builder_log.info("context compaction: removed %d text-only exchange pairs", removed)
+        return compacted
+
+    for round_num in range(max_rounds):
+        _builder_log.debug("round %d/%d, messages=%d, finalized=%s",
+                          round_num + 1, max_rounds, len(builder_messages), finalized)
+
+        try:
+            resp = client.complete(
+                builder_messages,
+                tools=_ALL_BUILDER_TOOLS if _ALL_BUILDER_TOOLS else None,
+            )
+        except Exception as exc:
+            _builder_log.error("API error on round %d: %s", round_num + 1, exc)
+            yield {"type": "phase", "phase": "iterative_build",
+                   "detail": f"API error on round {round_num + 1}: {exc}"}
+            yield {"type": "error", "message": f"LLM API error: {exc}"}
+            return
+
+        has_tool_calls = bool(resp.tool_calls)
+        content_preview = (resp.content or "")[:150]
+
+        _builder_log.debug("round %d response: stop_reason=%s, has_tool_calls=%s, "
+                          "content_preview=%s",
+                          round_num + 1, resp.stop_reason, has_tool_calls,
+                          repr(content_preview))
+
+        builder_messages.append(client.assistant_message(resp))
+
+        if resp.tool_calls:
+            consecutive_text_only = 0
+            tool_names = [tc.name for tc in resp.tool_calls]
+            _builder_log.debug(
+                "round %d tools: %s", round_num + 1, ", ".join(tool_names))
+            yield {"type": "phase", "phase": "iterative_build",
+                   "detail": f"Build round {round_num + 1}: "
+                             f"{len(resp.tool_calls)} tool call(s) — "
+                             f"{', '.join(tool_names)}"}
+
+            for tc in resp.tool_calls:
+                try:
+                    parsed_args = json.loads(tc.arguments)
+                except json.JSONDecodeError as exc:
+                    _builder_log.error("JSON parse error for %s: %s, raw=%s",
+                                      tc.name, exc, tc.arguments[:200])
+                    parsed_args = {}
+                    builder_messages.append(
+                        client.tool_result_message(tc, json.dumps({"error": f"Invalid JSON arguments: {exc}"}))
+                    )
+                    yield {"type": "tool_result", "name": tc.name,
+                           "result": json.dumps({"error": f"Invalid JSON arguments: {exc}"})}
+                    continue
+
+                tool_log.append((tc.name, parsed_args))
+                _builder_log.debug("  tool_call: %s(%s)",
+                                   tc.name,
+                                   json.dumps(parsed_args, ensure_ascii=False)[:300])
+
+                yield {"type": "tool_call", "name": tc.name, "args": parsed_args}
+
+                try:
+                    result_str = _dispatch_builder_tool(
+                        tc.name, tc.arguments, graph
+                    )
+                except Exception as exc:
+                    _builder_log.error("dispatch error for %s: %s", tc.name, exc)
+                    result_str = json.dumps({"error": f"Tool dispatch error: {exc}"})
+
+                _builder_log.debug("  result: %s", result_str[:400])
+
+                yield {"type": "tool_result", "name": tc.name, "result": result_str}
+
+                builder_messages.append(client.tool_result_message(tc, result_str))
+
+                if tc.name in _BUILDER_TOOL_NAMES:
+                    dot = graph.to_dot(highlight=True)
+                    state = graph.get_state()
+                    yield {
+                        "type": "circuit_updated",
+                        "dot": dot,
+                        "component_count": state["total_components"],
+                        "connection_count": state["total_connections"],
+                    }
+
+                if tc.name == "finalize":
+                    try:
+                        result_data = json.loads(result_str)
+                    except (json.JSONDecodeError, TypeError):
+                        result_data = {}
+                    if result_data.get("status") != "error":
+                        finalized = True
+                        _builder_log.info("finalize accepted on round %d", round_num + 1)
+                    else:
+                        _builder_log.info(
+                            "finalize REJECTED on round %d: %s",
+                            round_num + 1, result_data.get("message", "")[:120])
+
+            # Break immediately after processing all tool calls if finalize was among them
+            if finalized:
+                break
+
+            # Gentle wiring reminder: if components were added but no
+            # connections were made, check whether there are wireable pairs
+            # (open outputs at stage N and open inputs at stage N+1).
+            # If so, remind — but don't force, since placing a full column
+            # before wiring is a valid strategy.
+            adds_this_round = sum(1 for n in tool_names if n == "add_component")
+            connects_this_round = sum(1 for n in tool_names
+                                      if n in ("connect", "replicate_stage"))
+            if adds_this_round > 0 and connects_this_round == 0:
+                open_ports_raw = graph.get_open_ports()
+                open_by_stage = open_ports_raw.get("open_ports_by_stage", {})
+                # Collect open outputs and inputs by stage
+                outputs_by_stage: dict[int, list] = {}
+                inputs_by_stage: dict[int, list] = {}
+                for stage_key, ports_list in open_by_stage.items():
+                    if not isinstance(ports_list, list):
+                        continue
+                    try:
+                        stage_int = int(stage_key)
+                    except (ValueError, TypeError):
+                        continue
+                    outs = [p for p in ports_list if p.get("direction") == "output"]
+                    ins = [p for p in ports_list if p.get("direction") == "input"]
+                    if outs:
+                        outputs_by_stage[stage_int] = outs
+                    if ins:
+                        inputs_by_stage[stage_int] = ins
+
+                # Find wireable pairs: match outputs to inputs by physical_lane
+                wireable_pairs: list[str] = []
+                for s, outs in sorted(outputs_by_stage.items()):
+                    for target_s in (s, s + 1):
+                        if target_s not in inputs_by_stage:
+                            continue
+                        ins = inputs_by_stage[target_s]
+                        # Build physical_lane -> input map
+                        in_by_lane: dict[int, list] = {}
+                        for ip in ins:
+                            pl = ip.get("physical_lane")
+                            if pl is not None:
+                                in_by_lane.setdefault(pl, []).append(ip)
+                        for op in outs:
+                            op_pl = op.get("physical_lane")
+                            matched_ins = in_by_lane.get(op_pl, []) if op_pl is not None else []
+                            # Exclude same-component matches (self-connections)
+                            matched_ins = [mi for mi in matched_ins
+                                           if mi["component"] != op["component"]]
+                            if matched_ins:
+                                for mi in matched_ins[:1]:
+                                    wireable_pairs.append(
+                                        f"connect({op['component']}, {op['port']}, "
+                                        f"{mi['component']}, {mi['port']})  "
+                                        f"# same physical_lane={op_pl}")
+                            else:
+                                # No lane match; show cross-component inputs only
+                                cross_ins = [ip for ip in ins
+                                             if ip["component"] != op["component"]]
+                                if cross_ins:
+                                    all_in_refs = ", ".join(
+                                        f"{ip['component']}.{ip['port']}" for ip in cross_ins[:3])
+                                    wireable_pairs.append(
+                                        f"{op['component']}.{op['port']} (lane {op_pl}) -> "
+                                        f"one of [{all_in_refs}]")
+
+                if wireable_pairs:
+                    hint_text = "\n".join(wireable_pairs[:12])
+                    _builder_log.debug(
+                        "round %d: %d add_component, 0 connect — "
+                        "%d wireable pair(s), injecting gentle reminder",
+                        round_num + 1, adds_this_round, len(wireable_pairs))
+                    builder_messages.append({
+                        "role": "user",
+                        "content": (
+                            f"You placed {adds_this_round} component(s) without "
+                            f"connections. Wire them now. Suggested connections "
+                            f"(same physical lane = correct routing):\n\n"
+                            f"{hint_text}\n\n"
+                            f"Call connect() for each of these."
+                        ),
+                    })
+                else:
+                    _builder_log.debug(
+                        "round %d: %d add_component, 0 connect — "
+                        "no wireable pairs yet (first stage), no reminder needed",
+                        round_num + 1, adds_this_round)
+
+        else:
+            content = resp.content or ""
+            if content.strip():
+                yield {"type": "agent_text", "content": content}
+
+            if finalized:
+                break
+
+            consecutive_text_only += 1
+            _builder_log.debug("round %d: no tool calls (%d consecutive), nudging LLM",
+                              round_num + 1, consecutive_text_only)
+
+            # Compact context after 3 consecutive text-only rounds to avoid bloat
+            if consecutive_text_only >= 3:
+                builder_messages = _compact_messages(builder_messages)
+                _builder_log.info("compacted context at round %d, messages now=%d",
+                                  round_num + 1, len(builder_messages))
+
+            # Escalating nudge: mild first, then strong
+            if round_num < max_rounds - 1:
+                state_snapshot = graph.get_state()
+                progress_hint = (
+                    f"Current progress: {state_snapshot['total_components']} components, "
+                    f"{state_snapshot['total_connections']} connections placed so far."
+                )
+                nudge = _NUDGE_MILD if consecutive_text_only <= 2 else _NUDGE_STRONG
+                builder_messages.append({
+                    "role": "user",
+                    "content": f"{nudge}\n\n{progress_hint}",
+                })
+
+    # Final graph state
+    final_state = graph.get_state()
+    _builder_log.info("DONE: finalized=%s, components=%d, connections=%d",
+                      finalized, final_state["total_components"],
+                      final_state["total_connections"])
+
+    if not finalized:
+        graph.finalize("Untitled Circuit", "Construction incomplete — max rounds reached.",
+                       force=True)
+        yield {"type": "phase", "phase": "iterative_build",
+               "detail": f"Max rounds reached — auto-finalizing with "
+                         f"{final_state['total_components']} components, "
+                         f"{final_state['total_connections']} connections."}
+
+    design_intent = graph.to_design_intent()
+
+    _builder_log.info("DesignIntent: title=%r, %d components, %d connections",
+                      design_intent.title, len(design_intent.components),
+                      len(design_intent.connections))
+
+    if len(design_intent.components) == 0:
+        yield {"type": "phase", "phase": "iterative_build",
+               "detail": "WARNING: DesignIntent has 0 components! "
+                         "The LLM may not have called any builder tools."}
+
+    serializable_messages = _serialise_messages(builder_messages)
+
+    yield {"type": "done", "result": design_intent, "messages": serializable_messages}
 
 
 # ---------------------------------------------------------------------------

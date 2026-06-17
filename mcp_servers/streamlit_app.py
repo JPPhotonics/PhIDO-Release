@@ -15,6 +15,9 @@ import base64
 import json
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from mcp_servers.interpreter_agent import explore_and_ask, finalize_stream
 from mcp_servers.pipeline_orchestrator import (
@@ -44,9 +47,26 @@ with st.sidebar:
 
     model = st.selectbox(
         "Model",
-        options=["o3-mini", "gpt-4o", "gpt-4o-mini", "o1", "o1-mini"],
+        options=[
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "gemini-3.1-pro-preview",
+            "gemini-3-flash-preview",
+            "gpt-5.4",
+            "gpt-4o",
+            "gpt-4o-mini",
+            "o3-mini",
+            "o1",
+            "claude-sonnet-4-20250514",
+            "claude-3.5-sonnet-20241022",
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+        ],
         index=0,
-        help="OpenAI model for the agent loop. Must support tool calling + structured output.",
+        help=(
+            "LLM for the agent loop. Frontier: Claude Opus/Sonnet 4.6, Gemini 3.x. "
+            "Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY / GEMINI_API_KEY."
+        ),
     )
     max_rounds = st.slider(
         "Max tool-calling rounds",
@@ -85,6 +105,42 @@ with st.sidebar:
     )
 
     st.markdown("---")
+
+    extraction_mode = st.radio(
+        "Extraction mode",
+        options=["single_shot", "iterative", "auto"],
+        index=0,
+        format_func=lambda x: {
+            "single_shot": "Single-shot (default)",
+            "iterative": "Iterative builder",
+            "auto": "Auto (complexity-based)",
+        }[x],
+        help=(
+            "**Single-shot**: Generate the full DesignIntent in one structured output call.\n\n"
+            "**Iterative builder**: Build the circuit step-by-step using tool calls on a "
+            "graph object. Better for complex circuits with many components.\n\n"
+            "**Auto**: Automatically pick iterative for complex designs."
+        ),
+    )
+
+    orchestration_strategy = st.radio(
+        "Orchestration strategy",
+        options=["rigid", "unified"],
+        index=0,
+        format_func=lambda x: {
+            "rigid": "Rigid (phased pipeline)",
+            "unified": "Unified (single session)",
+        }[x],
+        help=(
+            "**Rigid**: Phased pipeline with separate LLM calls per stage. "
+            "Each stage has its own context window. Best for weaker models.\n\n"
+            "**Unified**: Single continuous agent session that explores and builds "
+            "in one context. Reduces overhead and context fragmentation. "
+            "Best for capable models (e.g., GPT-5, Claude Opus/Sonnet 4.6, Gemini 3)."
+        ),
+    )
+
+    st.markdown("---")
     tools_md = (
         "**Tools available:**\n"
         "- `search_pdk` — PDK component search\n"
@@ -119,7 +175,8 @@ run_btn = st.button("Interpret", type="primary", disabled=not prompt.strip())
 # ---------------------------------------------------------------------------
 _DEFAULTS = {
     "stage": "initial",          # initial | exploring | disambiguating | finalizing
-                                 # | error_review | reviewing | patching | simulating | done
+                                 # | unified_disambiguating | error_review
+                                 # | reviewing | patching | simulating | done
     "design_intent": None,
     "dot_string": None,
     "preschematic_dot": None,
@@ -138,12 +195,17 @@ _DEFAULTS = {
     "s_params_json": None,
     "gds_file_path": None,
     "schematic_feedback": None,
+    "live_circuit_dot": None,
     # Intermediate state for tiered feedback
     "footprints": None,
     "positions": None,
     "_edge_patches": None,
     # Validation failure state for error_review stage
     "validation_failed_event": None,
+    # Unified orchestration mid-session disambiguation state
+    "unified_questions": None,
+    "unified_resume_state": None,
+    "unified_user_answers": None,
 }
 for key, default in _DEFAULTS.items():
     if key not in st.session_state:
@@ -161,6 +223,8 @@ PHASE_LABELS = {
     "upstream_feedback":    "Upstream Feedback",
     "structuring":          "Structured Output",
     "critic":               "Critic Review",
+    "iterative_build":      "Iterative Circuit Builder",
+    "mode_selection":       "Extraction Mode",
     # Topology Gate
     "topology_gate":        "Topology Validation",
     "validation_retry":     "Validation Retry",
@@ -180,6 +244,10 @@ PHASE_LABELS = {
     "layout_gds":           "GDS Layout Generation",
     "simulation":           "Circuit Simulation (SAX)",
     "gds_export":           "GDS File Export",
+    # Visual Critic
+    "visual_critic":        "Visual Schematic Review",
+    # Unified orchestration
+    "unified_session":      "Unified Session",
     # Generic fallback
     "pipeline_phase":       "Pipeline",
 }
@@ -188,11 +256,28 @@ PHASE_LABELS = {
 # ---------------------------------------------------------------------------
 # Helper: render a stream of agent events inside a status widget
 # ---------------------------------------------------------------------------
-def _render_events(event_stream, status_widget):
-    """Consume an event generator and render each event in the Streamlit status widget."""
+def _render_events(event_stream, status_widget, graph_placeholder=None):
+    """Consume an event generator and render each event in the Streamlit status widget.
+
+    If ``graph_placeholder`` is an ``st.empty()`` container, ``circuit_updated``
+    events will live-update a Graphviz chart there.
+    """
     for event in event_stream:
         etype = event["type"]
         st.session_state.run_log.append(event)
+
+        if etype == "circuit_updated":
+            dot = event.get("dot", "")
+            st.session_state["live_circuit_dot"] = dot
+            n_comp = event.get("component_count", 0)
+            n_conn = event.get("connection_count", 0)
+            st.write(f"Circuit: {n_comp} component(s), {n_conn} connection(s)")
+            if graph_placeholder and dot:
+                try:
+                    graph_placeholder.graphviz_chart(dot, use_container_width=True)
+                except Exception:
+                    pass
+            continue
 
         if etype == "phase":
             label = PHASE_LABELS.get(event["phase"], event["phase"])
@@ -314,6 +399,22 @@ def _render_events(event_stream, status_widget):
         elif etype == "edge_routing_done":
             st.write("**Edges routed** (port-level).")
 
+        elif etype == "visual_critic_verdict":
+            verdict = event.get("verdict", {})
+            if verdict.get("passed"):
+                st.write("**Visual critic:** Passed")
+            else:
+                st.warning(
+                    f"**Visual critic: Issues found** — {verdict.get('summary', '')}"
+                )
+                issues = verdict.get("issues", [])
+                if issues:
+                    with st.expander(f"{len(issues)} visual issue(s)", expanded=False):
+                        for iss in issues:
+                            sev = iss.get("severity", "?")
+                            desc = iss.get("description", "")
+                            st.markdown(f"- **[{sev}]** {desc}")
+
         elif etype == "layout_done":
             n = len(event.get("positions", {}))
             st.write(f"**Layout computed** for {n} node(s).")
@@ -335,6 +436,17 @@ def _render_events(event_stream, status_widget):
             st.session_state.positions = result.get("positions")
             if result.get("dot_string"):
                 st.session_state.dot_string = result["dot_string"]
+            di_raw = result.get("design_intent")
+            if di_raw and st.session_state.design_intent is None:
+                try:
+                    st.session_state.design_intent = (
+                        DesignIntent(**di_raw) if isinstance(di_raw, dict) else di_raw
+                    )
+                    st.session_state.preschematic_dot = (
+                        st.session_state.design_intent.to_dot()
+                    )
+                except Exception:
+                    pass
             st.session_state.stage = "reviewing"
             st.session_state.pipeline_finalize = False
             status_widget.update(
@@ -364,6 +476,18 @@ def _render_events(event_stream, status_widget):
                 state="complete",
                 expanded=False,
             )
+
+        elif etype == "user_question":
+            st.session_state.unified_questions = event["questions"]
+            st.session_state.unified_resume_state = event["resume_state"]
+            st.session_state.stage = "unified_disambiguating"
+            st.session_state.pipeline_finalize = False
+            status_widget.update(
+                label="Waiting for user input...",
+                state="complete",
+                expanded=False,
+            )
+            st.rerun()
 
         elif etype == "validation_retry":
             st.info(event.get("detail", "Retrying interpreter with validation feedback..."))
@@ -404,7 +528,10 @@ if run_btn and prompt.strip():
     for key, default in _DEFAULTS.items():
         st.session_state[key] = default
     st.session_state.user_prompt = prompt.strip()
-    st.session_state.stage = "exploring"
+    if orchestration_strategy == "unified":
+        st.session_state.stage = "finalizing"
+    else:
+        st.session_state.stage = "exploring"
 
 # ---------------------------------------------------------------------------
 # Stage: EXPLORING — run Phases 0 → 1 → 1.5 → 1.75
@@ -533,6 +660,82 @@ if st.session_state.stage == "disambiguating":
         st.rerun()
 
 # ---------------------------------------------------------------------------
+# Stage: UNIFIED_DISAMBIGUATING — mid-session clarification from ask_user tool
+# ---------------------------------------------------------------------------
+if st.session_state.stage == "unified_disambiguating":
+    st.markdown("---")
+    st.header("Agent has a question")
+    st.info(
+        "The agent encountered ambiguity during design exploration and needs "
+        "your input before continuing. Answer below, or skip to let the agent "
+        "use its defaults."
+    )
+
+    questions = st.session_state.get("unified_questions") or []
+
+    with st.form("unified_disambiguation_form"):
+        answers: dict[str, str] = {}
+
+        for i, q in enumerate(questions):
+            st.markdown(f"**{q.get('question', '?')}**")
+            context = q.get("context", "")
+            if context:
+                st.caption(f"Context: {context}")
+
+            options = q.get("options") or []
+            default = q.get("default", "")
+
+            if options:
+                options_list = [f"(use default: {default})"] + options
+                choice = st.selectbox(
+                    "Your answer",
+                    options=options_list,
+                    key=f"uq_{i}",
+                )
+                custom = st.text_input(
+                    "Or enter a custom answer (overrides dropdown if non-empty)",
+                    key=f"uq_{i}_custom",
+                )
+                if custom.strip():
+                    answers[q["question"]] = custom.strip()
+                elif choice != options_list[0]:
+                    answers[q["question"]] = choice
+            else:
+                ans = st.text_input(
+                    "Your answer",
+                    placeholder=f"Default: {default}",
+                    key=f"uq_{i}",
+                )
+                if ans.strip():
+                    answers[q["question"]] = ans.strip()
+
+            if i < len(questions) - 1:
+                st.markdown("---")
+
+        col_submit, col_skip = st.columns(2)
+        with col_submit:
+            submitted = st.form_submit_button("Submit answers & continue", type="primary")
+        with col_skip:
+            skipped = st.form_submit_button("Skip — use agent defaults")
+
+        if submitted or skipped:
+            if skipped or not answers:
+                final_answers = {
+                    q.get("question", ""): q.get("default", "")
+                    for q in questions
+                }
+            else:
+                final_answers = {
+                    q.get("question", ""): answers.get(
+                        q.get("question", ""), q.get("default", "")
+                    )
+                    for q in questions
+                }
+            st.session_state.unified_user_answers = final_answers
+            st.session_state.stage = "finalizing"
+            st.rerun()
+
+# ---------------------------------------------------------------------------
 # Stage: FINALIZING — run Phases 2 → 7 (interpreter + component selection + schematic)
 # ---------------------------------------------------------------------------
 if st.session_state.stage == "finalizing":
@@ -541,12 +744,28 @@ if st.session_state.stage == "finalizing":
     explore_state = st.session_state.explore_state
     clarifications = st.session_state.get("clarifications")
 
-    label = "Finalizing design"
-    if clarifications:
-        label += f" (with {len(clarifications)} clarification(s))"
-    label += "..."
+    # Detect whether we are resuming a paused unified session
+    resume_state = st.session_state.get("unified_resume_state")
+    user_answers = st.session_state.get("unified_user_answers")
+    if resume_state and user_answers is not None:
+        resume_state["user_answers"] = user_answers
+        label = "Unified session — resuming with your answers..."
+    elif orchestration_strategy == "unified":
+        resume_state = None
+        label = "Unified session — exploring & building..."
+    else:
+        resume_state = None
+        label = "Finalizing design"
+        if clarifications:
+            label += f" (with {len(clarifications)} clarification(s))"
+        if extraction_mode == "iterative":
+            label += " [iterative builder]"
+        label += "..."
 
     feedback_for_retry = st.session_state.get("schematic_feedback")
+
+    # Live circuit visualization placeholder (updated by circuit_updated events)
+    live_graph_placeholder = st.empty()
 
     st.session_state.pipeline_finalize = True
     with st.status(label, expanded=True) as status_widget:
@@ -559,12 +778,21 @@ if st.session_state.stage == "finalizing":
                 max_tool_rounds=max_rounds,
                 max_critic_rounds=max_critic,
                 schematic_feedback=feedback_for_retry,
+                extraction_mode=extraction_mode,
+                orchestration=orchestration_strategy,
+                unified_resume_state=resume_state,
             ),
             status_widget,
+            graph_placeholder=live_graph_placeholder,
         )
+
+    # Clear unified disambiguation state after pipeline completes or pauses
+    st.session_state.unified_resume_state = None
+    st.session_state.unified_user_answers = None
+    st.session_state.unified_questions = None
     st.session_state.schematic_feedback = None
 
-    if st.session_state.stage in ("reviewing", "error_review"):
+    if st.session_state.stage in ("reviewing", "error_review", "unified_disambiguating"):
         st.rerun()
 
 # ---------------------------------------------------------------------------
@@ -771,9 +999,12 @@ if st.session_state.stage == "patching":
                 run_pipeline_patch_edges(
                     circuit_dsl=st.session_state.circuit_dsl,
                     selection_dict=st.session_state.component_selection,
-                    design_intent_dict=st.session_state.design_intent.model_dump()
-                        if hasattr(st.session_state.design_intent, "model_dump")
-                        else st.session_state.design_intent.full(),
+                    design_intent_dict=(
+                        st.session_state.design_intent.model_dump()
+                        if st.session_state.design_intent
+                        and hasattr(st.session_state.design_intent, "model_dump")
+                        else (st.session_state.design_intent or {})
+                    ),
                     dot_string=st.session_state.final_dot,
                     footprints=st.session_state.footprints or {},
                     edge_patches=patches,
@@ -784,7 +1015,10 @@ if st.session_state.stage == "patching":
     elif feedback_text:
         label = "Classifying feedback and applying changes..."
         di = st.session_state.design_intent
-        di_dict = di.model_dump() if hasattr(di, "model_dump") else di.full()
+        di_dict = (
+            di.model_dump() if di and hasattr(di, "model_dump")
+            else (di or {})
+        )
         with st.status(label, expanded=True) as status_widget:
             _render_events(
                 run_pipeline_with_feedback(
@@ -800,6 +1034,8 @@ if st.session_state.stage == "patching":
                     clarifications=st.session_state.get("clarifications"),
                     max_tool_rounds=max_rounds,
                     max_critic_rounds=max_critic,
+                    extraction_mode=extraction_mode,
+                    orchestration=orchestration_strategy,
                 ),
                 status_widget,
             )
@@ -1069,6 +1305,10 @@ if di is not None:
                 st.markdown(f"[{i}] GDS rendered ({routing} routing)")
             elif etype == "layout_sim_done":
                 st.markdown(f"[{i}] Layout and simulation complete")
+            elif etype == "circuit_updated":
+                n_c = event.get("component_count", 0)
+                n_e = event.get("connection_count", 0)
+                st.markdown(f"[{i}] Circuit updated: {n_c} components, {n_e} connections")
             elif etype == "validation_retry":
                 st.markdown(f"[{i}] 🔄 {event.get('detail', 'Validation retry')}")
             elif etype == "validation_failed":

@@ -28,7 +28,7 @@ from typing import Any, Generator, Optional
 
 _CODE_FENCE_RE = re.compile(r"```(?:dot|graphviz)?\s*\n?", re.IGNORECASE)
 
-from openai import OpenAI
+from mcp_servers.llm_client import create_client, LLMClient
 
 from mcp_servers.models import (
     DesignIntent,
@@ -40,12 +40,24 @@ from mcp_servers.models import (
     FeedbackClassification,
     EdgePatch,
     ComponentSwap,
+    SettingEntry,
 )
 from mcp_servers.interpreter_agent import (
     explore_and_ask,
     finalize_stream,
     extract_design_intent,
+    build_circuit_iterative,
     run_critic_review,
+    AGENT_SYSTEM_PROMPT,
+    ITERATIVE_BUILD_PROMPT,
+    TOOLS as INTERPRETER_TOOLS,
+    _ALL_BUILDER_TOOLS,
+    _BUILDER_TOOL_NAMES,
+    _dispatch_builder_tool,
+    _execute_tool_raw,
+    _PDK_CATALOG,
+    CriticVerdict,
+    CriticIssue,
 )
 from mcp_servers.pdk_catalog_server import (
     search_components,
@@ -64,6 +76,7 @@ from mcp_servers.schematic_builder_server import (
 )
 from mcp_servers.ar_validator import validate_parameters
 from mcp_servers.clingo_validator import validate_topology
+from mcp_servers.circuit_graph import CircuitGraph
 
 PipelineEvent = dict[str, Any]
 
@@ -289,36 +302,69 @@ def _build_schematic_context(
 
 
 def _classify_feedback(
-    client: OpenAI,
+    client: LLMClient,
     feedback_text: str,
     circuit_dsl: dict,
     selection_dict: dict,
     dot_string: str,
-    model: str = "o3-mini",
 ) -> FeedbackClassification:
     """Use an LLM to classify user schematic feedback into a tier."""
     context = _build_schematic_context(circuit_dsl, selection_dict, dot_string)
     prompt = FEEDBACK_CLASSIFIER_PROMPT.replace("{context}", context)
 
-    response = client.beta.chat.completions.parse(
-        model=model,
-        messages=[
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": feedback_text},
-        ],
-        response_format=FeedbackClassification,
+    return client.complete_structured(
+        messages=[{"role": "user", "content": feedback_text}],
+        response_model=FeedbackClassification,
+        system=prompt,
     )
-    return response.choices[0].message.parsed
 
 
 # ---------------------------------------------------------------------------
 # Phase 4: Component Selection
 # ---------------------------------------------------------------------------
 
-def _run_component_selection(
-    client: OpenAI,
+def _build_selection_from_intent(
     design_intent: DesignIntent,
-    model: str = "o3-mini",
+) -> Optional[ComponentSelection]:
+    """Build a ComponentSelection directly from pre-grounded ComponentIntents.
+
+    When the iterative builder has already resolved PDK modules (via
+    ``ComponentIntent.pdk_module``), there is no need to re-derive them
+    through the LLM selection gate.  Returns ``None`` if any component
+    lacks a ``pdk_module``, signalling that the LLM path is required.
+    """
+    if not all(c.pdk_module for c in design_intent.components):
+        return None
+
+    mappings: list[ComponentMapping] = []
+    for comp in design_intent.components:
+        params = _get_ground_truth_params(comp.pdk_module)  # type: ignore[arg-type]
+        overrides = [
+            SettingEntry(key=s.key, value=s.value) for s in comp.specs
+        ]
+        mappings.append(ComponentMapping(
+            component_id=comp.id,
+            pdk_module=comp.pdk_module,  # type: ignore[arg-type]
+            match_quality="exact",
+            port_config=comp.port_config or "",
+            resolved_settings=[
+                SettingEntry(key=k, value=str(v)) for k, v in params.items()
+            ],
+            user_overrides=overrides,
+            notes=["Pre-grounded by iterative builder"],
+        ))
+
+    return ComponentSelection(
+        design_intent=design_intent,
+        mappings=mappings,
+        unmapped=[],
+        ambiguities=[],
+    )
+
+
+def _run_component_selection(
+    client: LLMClient,
+    design_intent: DesignIntent,
 ) -> Generator[PipelineEvent, None, None]:
     """Match ComponentIntents to PDK modules via LLM structured output.
 
@@ -341,22 +387,15 @@ def _run_component_selection(
 
     pdk_context = "\n".join(pdk_context_parts)
 
-    messages = [
-        {"role": "system", "content": SELECTOR_PROMPT},
-        {"role": "user", "content": (
+    llm_result: ComponentSelectionLLM = client.complete_structured(
+        messages=[{"role": "user", "content": (
             f"## DesignIntent\n\n"
             f"```json\n{json.dumps(design_intent.summary(), indent=2)}\n```\n\n"
             f"## PDK Search Results\n{pdk_context}"
-        )},
-    ]
-
-    response = client.beta.chat.completions.parse(
-        model=model,
-        messages=messages,
-        response_format=ComponentSelectionLLM,
+        )}],
+        response_model=ComponentSelectionLLM,
+        system=SELECTOR_PROMPT,
     )
-
-    llm_result: ComponentSelectionLLM = response.choices[0].message.parsed
 
     selection = ComponentSelection(
         design_intent=design_intent,
@@ -375,10 +414,9 @@ def _run_component_selection(
 # ---------------------------------------------------------------------------
 
 def _llm_compliance_check(
-    client: OpenAI,
+    client: LLMClient,
     selection: ComponentSelection,
     design_intent: DesignIntent,
-    model: str = "o3-mini",
 ) -> list[PipelineFeedback]:
     """Ask an LLM to verify each mapping is a faithful functional match.
 
@@ -408,18 +446,12 @@ def _llm_compliance_check(
     if not review_parts:
         return []
 
-    messages = [
-        {"role": "system", "content": COMPLIANCE_PROMPT},
-        {"role": "user", "content": "\n".join(review_parts)},
-    ]
-
     try:
-        response = client.beta.chat.completions.parse(
-            model=model,
-            messages=messages,
-            response_format=ComplianceVerdict,
+        verdict: ComplianceVerdict = client.complete_structured(
+            messages=[{"role": "user", "content": "\n".join(review_parts)}],
+            response_model=ComplianceVerdict,
+            system=COMPLIANCE_PROMPT,
         )
-        verdict: ComplianceVerdict = response.choices[0].message.parsed
     except Exception:
         return []
 
@@ -457,11 +489,154 @@ def _sanitise_dot(raw: str) -> str:
     return cleaned
 
 
+def _render_dot_to_png(dot_string: str) -> Optional[bytes]:
+    """Render a DOT string to PNG bytes via the graphviz package."""
+    try:
+        import graphviz
+        src = graphviz.Source(dot_string)
+        return src.pipe(format="png")
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Phase 5c: Visual Critic (optional — vision-capable models only)
+# ---------------------------------------------------------------------------
+
+_VISUAL_CRITIC_SYSTEM_PROMPT = """\
+You are a rigorous photonic circuit schematic reviewer. You will be shown:
+
+1. A rendered schematic diagram (image) of a photonic integrated circuit.
+2. The original user prompt describing what they want.
+3. A summary of the DesignIntent that was extracted from the user prompt.
+
+**Schematic legend:**
+- Each node label follows the format: ``ComponentID: Role (pdk_module)``
+- Each edge follows the format: ``srcNode:port -- tgtNode:port``
+- Unconnected ports may appear as dangling stubs on a node.
+
+**Your job:**
+Compare the schematic image against the user's original design request and the
+DesignIntent summary. Check for the following:
+
+1. **Component count**: Does the schematic contain the expected number of each
+   component type described by the user?
+2. **Connectivity**: Are all connections described by the user present? Are there
+   any missing or extra edges?
+3. **Orphaned nodes**: Are there any nodes with zero connections that should be
+   connected?
+4. **Topology**: Does the overall graph topology match the described architecture
+   (e.g. cascaded, ring, MZI arms, balanced tree)?
+5. **Visual layout**: Are there obvious edge crossings, overlapping nodes, or
+   layout issues that suggest a structural problem?
+6. **Port consistency**: Do the port labels on edges look reasonable for the
+   component types involved?
+
+For each issue found, classify severity:
+- **major**: Missing component, wrong topology, orphaned node that should be
+  connected, missing connections.
+- **minor**: Slightly suboptimal layout, minor port naming concern, cosmetic issue.
+
+Be thorough but fair. If the schematic correctly implements what the user asked
+for, pass it. Do not nitpick cosmetic details unless they indicate a structural
+problem.
+
+After your analysis, state VERDICT: PASS or VERDICT: FAIL, then list any issues.
+"""
+
+
+def _run_visual_critic(
+    client: "LLMClient",
+    user_prompt: str,
+    design_intent: "DesignIntent",
+    dot_with_edges: str,
+) -> Generator[PipelineEvent, None, None]:
+    """Phase 5c: optional visual review of the rendered schematic.
+
+    Automatically skipped when the model lacks vision support or when
+    DOT-to-PNG rendering fails. Non-blocking: issues are yielded as
+    feedback events but never abort the pipeline.
+    """
+    if not client.supports_vision:
+        yield {"type": "phase", "phase": "visual_critic",
+               "detail": "Skipped (model does not support vision input)."}
+        return
+
+    png_bytes = _render_dot_to_png(dot_with_edges)
+    if png_bytes is None:
+        yield {"type": "phase", "phase": "visual_critic",
+               "detail": "Skipped (DOT rendering to PNG failed)."}
+        return
+
+    yield {"type": "phase", "phase": "visual_critic",
+           "detail": "Vision model reviewing rendered schematic..."}
+
+    di_summary = (
+        f"Title: {design_intent.title}\n"
+        f"Summary: {design_intent.brief_summary}\n"
+        f"Components ({len(design_intent.components)}):\n"
+        + "\n".join(
+            f"  - {c.id}: {c.description} (type={c.component_type}, "
+            f"ports={c.port_config or '?'}, pdk={c.pdk_module or 'ungrounded'})"
+            for c in design_intent.components
+        )
+        + f"\nConnections ({len(design_intent.connections)}):\n"
+        + "\n".join(
+            f"  - {c.from_component} → {c.to_component}"
+            + (f" ({c.from_port}→{c.to_port})" if c.from_port else "")
+            for c in design_intent.connections
+        )
+    )
+
+    vision_text = (
+        f"## Original User Prompt\n{user_prompt}\n\n"
+        f"## DesignIntent Summary\n{di_summary}\n\n"
+        f"## Task\n"
+        f"Review the attached schematic image. Does it faithfully implement "
+        f"what the user asked for? Identify any structural issues."
+    )
+
+    try:
+        resp = client.complete_vision(
+            text=vision_text,
+            image_bytes=png_bytes,
+            system=_VISUAL_CRITIC_SYSTEM_PROMPT,
+        )
+    except Exception as exc:
+        yield {"type": "phase", "phase": "visual_critic",
+               "detail": f"Vision critic call failed: {exc}"}
+        return
+
+    analysis = resp.content or ""
+    yield {"type": "agent_text", "content": f"**Visual critic analysis:**\n{analysis}"}
+
+    try:
+        verdict = client.complete_structured(
+            messages=[
+                {"role": "user", "content": (
+                    f"Based on the following visual schematic review, produce a "
+                    f"structured CriticVerdict.\n\n{analysis}"
+                )},
+            ],
+            response_model=CriticVerdict,
+        )
+    except Exception:
+        verdict = CriticVerdict(
+            passed=True, issues=[],
+            summary="Could not extract structured verdict; assuming pass.",
+        )
+
+    yield {"type": "visual_critic_verdict", "verdict": verdict.model_dump()}
+
+    if not verdict.passed:
+        yield {"type": "feedback", "source": "visual_critic",
+               "issues": [i.model_dump() for i in verdict.issues]}
+
+
 def _run_edge_routing(
-    client: OpenAI,
+    client: LLMClient,
     dot_with_ports: str,
     preschematic_dot: str,
-    model: str = "o3-mini",
     max_retries: int = 2,
 ) -> Generator[PipelineEvent, None, None]:
     """Add port-level edges to a DOT graph using LLM, with planarity retries.
@@ -476,24 +651,21 @@ def _run_edge_routing(
     yield {"type": "phase", "phase": "edge_routing",
            "detail": "LLM routing port-level edges..."}
 
-    # --- Step 1: Initial edge routing ---
     prompt = (
         f"{EDGE_ROUTING_PROMPT}\n\n"
         f"INPUT graph1:\n{dot_with_ports}\n\n"
         f"INPUT graph2:\n{preschematic_dot}\n"
     )
-    response = client.chat.completions.create(
-        model=model,
+    resp = client.complete(
         messages=[{"role": "user", "content": prompt}],
     )
-    dot_with_edges = _sanitise_dot(response.choices[0].message.content)
+    dot_with_edges = _sanitise_dot(resp.content or "")
 
-    # --- Step 2: Planarity check + retry loop ---
     for attempt in range(max_retries):
         try:
             planarity = json.loads(check_planarity(dot_with_edges))
         except (json.JSONDecodeError, TypeError):
-            break  # can't parse result, skip retry
+            break
 
         if planarity.get("planar", True):
             yield {"type": "phase", "phase": "edge_routing",
@@ -510,22 +682,19 @@ def _run_edge_routing(
             f"INPUT graph2:\n{preschematic_dot}\n\n"
             f"INPUT graph3 (FAILED attempt):\n{dot_with_edges}\n"
         )
-        response = client.chat.completions.create(
-            model=model,
+        resp = client.complete(
             messages=[{"role": "user", "content": retry_prompt}],
         )
-        dot_with_edges = _sanitise_dot(response.choices[0].message.content)
+        dot_with_edges = _sanitise_dot(resp.content or "")
 
-    # --- Step 3: Verification pass ---
     yield {"type": "phase", "phase": "edge_routing",
            "detail": "Verifying edge constraints..."}
 
     verify_prompt = f"{EDGE_VERIFY_PROMPT}\n\n{dot_with_edges}"
-    response = client.chat.completions.create(
-        model=model,
+    resp = client.complete(
         messages=[{"role": "user", "content": verify_prompt}],
     )
-    dot_verified = _sanitise_dot(response.choices[0].message.content)
+    dot_verified = _sanitise_dot(resp.content or "")
 
     yield {"type": "edge_routing_done", "dot": dot_verified, "_result": dot_verified}
 
@@ -738,13 +907,24 @@ def _build_circuit_dsl(
                 "params": params,
                 "label": f"{comp.id}: {display}\\n({mapping.pdk_module})",
             }
+    # Populate edges from connections that have port-level info
+    # (set by the iterative builder). Format: "C1,o3: C3,o2"
+    edges: dict[str, dict] = {}
+    for i, conn in enumerate(design_intent.connections):
+        if conn.from_port and conn.to_port:
+            if conn.from_component in nodes and conn.to_component in nodes:
+                edges[f"E{i + 1}"] = {
+                    "link": f"{conn.from_component},{conn.from_port}: "
+                            f"{conn.to_component},{conn.to_port}"
+                }
+
     return {
         "doc": {
             "name": design_intent.title,
             "description": design_intent.brief_summary,
         },
         "nodes": nodes,
-        "edges": {},
+        "edges": edges,
         "ports": {},
     }
 
@@ -846,7 +1026,7 @@ def run_pipeline_patch_edges(
     dot_string: str,
     footprints: dict,
     edge_patches: list[EdgePatch],
-    model: str = "o3-mini",
+    model: str = "gpt-5.4",
 ) -> Generator[PipelineEvent, None, None]:
     """Tier 1: apply edge patches to the existing schematic without re-running
     the interpreter or component selection.
@@ -929,12 +1109,12 @@ def run_pipeline_reselect(
     design_intent_dict: dict,
     prev_selection_dict: dict,
     component_swaps: list[ComponentSwap],
-    model: str = "o3-mini",
+    model: str = "gpt-5.4",
 ) -> Generator[PipelineEvent, None, None]:
     """Tier 2: re-select only the targeted components, keeping all others
     from the previous selection, then rebuild DSL + edge routing + layout + export.
     """
-    client = OpenAI()
+    client = create_client(model)
     design_intent = DesignIntent(**design_intent_dict)
 
     # ── Topology Gate (Checkpoint A — Clingo) ────────────────────────
@@ -999,12 +1179,10 @@ def run_pipeline_reselect(
         ]
 
         try:
-            response = client.beta.chat.completions.parse(
-                model=model,
+            llm_result: ComponentSelectionLLM = client.complete_structured(
                 messages=messages,
-                response_format=ComponentSelectionLLM,
+                response_model=ComponentSelectionLLM,
             )
-            llm_result: ComponentSelectionLLM = response.choices[0].message.parsed
             new_mappings.extend(llm_result.mappings)
         except Exception as exc:
             yield {"type": "phase", "phase": "component_reselection",
@@ -1033,7 +1211,7 @@ def run_pipeline_reselect(
             unmapped=[],
             ambiguities=[],
         )
-        compliance_feedback = _llm_compliance_check(client, partial_sel, design_intent, model)
+        compliance_feedback = _llm_compliance_check(client, partial_sel, design_intent)
         if compliance_feedback:
             yield {"type": "feedback", "source": "compliance_check",
                    "issues": [f.model_dump() for f in compliance_feedback]}
@@ -1058,14 +1236,37 @@ def run_pipeline_reselect(
     preschematic = design_intent.to_dot()
 
     dot_with_edges: Optional[str] = None
-    for event in _run_edge_routing(client, dot_no_edges, preschematic, model):
-        yield event
-        if "_result" in event:
-            dot_with_edges = event["_result"]
+    if circuit_dsl.get("edges"):
+        yield {"type": "phase", "phase": "edge_routing",
+               "detail": "Using port-level edges from iterative builder (skipping LLM routing)."}
+        edge_lines: list[str] = []
+        for _eid, einfo in circuit_dsl["edges"].items():
+            link = einfo.get("link", "")
+            parts = link.split(": ")
+            if len(parts) == 2:
+                src_node, src_port = parts[0].split(",", 1)
+                tgt_node, tgt_port = parts[1].split(",", 1)
+                edge_lines.append(
+                    f"  {src_node}:{src_port} -- {tgt_node}:{tgt_port};"
+                )
+        dot_lines = dot_no_edges.rstrip().rstrip("}").rstrip()
+        dot_with_edges = dot_lines + "\n" + "\n".join(edge_lines) + "\n}"
+        yield {"type": "edge_routing_done", "_result": dot_with_edges}
+    else:
+        for event in _run_edge_routing(client, dot_no_edges, preschematic):
+            yield event
+            if "_result" in event:
+                dot_with_edges = event["_result"]
 
     if dot_with_edges is None:
         yield {"type": "error", "message": "Edge routing failed"}
         return
+
+    # Phase 5c: Visual critic (optional)
+    yield {"type": "pipeline_phase", "phase": "visual_critic"}
+    _reselect_prompt = f"{design_intent.title}: {design_intent.brief_summary}"
+    for vc_event in _run_visual_critic(client, _reselect_prompt, design_intent, dot_with_edges):
+        yield vc_event
 
     yield {"type": "pipeline_phase", "phase": "layout"}
 
@@ -1151,92 +1352,91 @@ def _format_validation_feedback(
     )
 
 
+_AUTO_ITERATIVE_THRESHOLD = 12
+
+
 def run_pipeline_finalize(
     explore_state: dict,
     user_prompt: str,
-    model: str = "o3-mini",
+    model: str = "gpt-5.4",
     clarifications: Optional[dict[str, str]] = None,
     max_tool_rounds: int = 10,
     max_critic_rounds: int = 2,
     schematic_feedback: Optional[str] = None,
+    extraction_mode: str = "single_shot",
+    orchestration: str = "rigid",
+    unified_resume_state: Optional[dict] = None,
 ) -> Generator[PipelineEvent, None, None]:
     """Run from Phase 2 onward: extract → Clingo → critic → selector → builder.
 
     Called by Streamlit after the disambiguation stage.
 
-    The Clingo topology gate (Phase 2.5) runs **before** the critic
-    (Phase 3) so that egregious structural errors are caught cheaply
-    without spending tokens on the critic LLM.  If Clingo finds
-    fundamental issues, the interpreter is retried immediately; the
-    critic is only invoked on topologically valid designs.  The critic
-    retains full tool access and can still catch subtler topology
-    problems that the Clingo rules don't cover.
-
-    Includes an automatic retry loop: if the topology gate or component
-    selection fails with fundamental errors, the interpreter is re-invoked
-    with the error details as upstream feedback (up to ``_MAX_VALIDATION_RETRIES``
-    times).  If retries are exhausted, a ``validation_failed`` event is
-    yielded so the UI can offer user-guided recovery.
-
     Args:
+        extraction_mode: ``"single_shot"`` (default) uses the existing
+            ``extract_design_intent`` path.  ``"iterative"`` uses the new
+            ``build_circuit_iterative`` tool-calling loop.  ``"auto"``
+            picks iterative when the estimated component count exceeds
+            ``_AUTO_ITERATIVE_THRESHOLD``.
         schematic_feedback: If provided, user feedback from the review gate.
-            Injected into the interpreter as upstream feedback so the pipeline
-            addresses the requested changes.
+        orchestration: ``"rigid"`` (default) runs the phased pipeline.
+            ``"unified"`` runs a single continuous LLM session.
+        unified_resume_state: If provided, resume a paused unified session
+            (after the user answered an ``ask_user`` question).
 
     Yields events for each phase. The final event is either
     ``{"type": "pipeline_done", ...}`` or ``{"type": "error", ...}``
     or ``{"type": "validation_failed", ...}`` (if retries exhaust).
     """
-    client = OpenAI()
-
-    upstream_fb = None
-    if schematic_feedback:
-        upstream_fb = (
-            "USER SCHEMATIC FEEDBACK\n"
-            "=======================\n"
-            "The user reviewed the generated schematic and requested changes:\n\n"
-            f"{schematic_feedback}\n\n"
-            "You MUST address this feedback. Re-investigate with your tools and "
-            "revise the DesignIntent accordingly."
+    if orchestration == "unified":
+        yield from run_pipeline_unified(
+            user_prompt, model,
+            resume_state=unified_resume_state,
+            schematic_feedback=schematic_feedback,
         )
+        return
 
-    max_attempts = _MAX_VALIDATION_RETRIES + 1
-    design_intent: Optional[DesignIntent] = None
-    selection: Optional[ComponentSelection] = None
+    client = create_client(model)
 
-    for attempt in range(1, max_attempts + 1):
-        # ── Phase 2: Extract DesignIntent ─────────────────────────────
-        if attempt > 1:
-            yield {"type": "phase", "phase": "validation_retry",
-                   "detail": f"Retry {attempt - 1}/{_MAX_VALIDATION_RETRIES}: "
-                             f"re-running interpreter with validation feedback..."}
+    # Resolve "auto" mode
+    effective_mode = extraction_mode
+    if effective_mode == "auto":
+        extracted = explore_state.get("extracted", {})
+        n_components = len(extracted.get("components", []))
+        n_specs = len(extracted.get("specs", []))
+        estimated = n_components + n_specs
+        if estimated >= _AUTO_ITERATIVE_THRESHOLD:
+            effective_mode = "iterative"
+            yield {"type": "phase", "phase": "mode_selection",
+                   "detail": (f"Auto mode: estimated {estimated} concepts "
+                              f"(>= {_AUTO_ITERATIVE_THRESHOLD}), using iterative builder.")}
+        else:
+            effective_mode = "single_shot"
+            yield {"type": "phase", "phase": "mode_selection",
+                   "detail": (f"Auto mode: estimated {estimated} concepts "
+                              f"(< {_AUTO_ITERATIVE_THRESHOLD}), using single-shot extraction.")}
 
+    # ── Iterative builder path ────────────────────────────────────────
+    if effective_mode == "iterative":
+        yield {"type": "pipeline_phase", "phase": "iterative_build"}
         design_intent = None
-        for event in extract_design_intent(
+        for event in build_circuit_iterative(
             messages=explore_state["messages"],
             tool_log=explore_state["tool_log"],
             extracted_dict=explore_state["extracted"],
             model=model,
-            max_tool_rounds=max_tool_rounds,
-            clarifications=clarifications if attempt == 1 else None,
-            upstream_feedback=upstream_fb,
+            max_rounds=1000,
             requirement_manifest_dict=explore_state.get("requirement_manifest"),
         ):
             yield event
             if event["type"] == "done":
                 design_intent = event["result"]
-                explore_state = {
-                    **explore_state,
-                    "messages": event.get("messages", explore_state["messages"]),
-                }
 
         if design_intent is None:
-            yield {"type": "error", "message": "Interpreter failed to produce DesignIntent"}
+            yield {"type": "error", "message": "Iterative builder failed to produce DesignIntent"}
             return
 
-        # ── Phase 2.5: Topology Gate (Checkpoint A — Clingo) ──────────
-        # Run before the critic to catch egregious structural errors
-        # cheaply, avoiding expensive critic LLM calls on broken topology.
+        # Skip directly to Clingo + downstream (no critic for iterative builds
+        # since the graph object already enforces structural validity)
         yield {"type": "pipeline_phase", "phase": "topology_gate"}
         yield {"type": "phase", "phase": "topology_gate",
                "detail": "Validating topology against architecture rules..."}
@@ -1247,121 +1447,207 @@ def run_pipeline_finalize(
             yield {"type": "feedback", "source": "topology_gate",
                    "issues": [f.model_dump() for f in topo_feedback]}
             if topo_fundamental:
-                if attempt < max_attempts:
-                    upstream_fb = _format_validation_feedback(
-                        topo_fundamental, "topology gate (Clingo)",
-                        attempt, max_attempts,
-                    )
-                    continue  # retry — skip the critic entirely
-                yield {"type": "validation_failed",
-                       "gate": "topology_gate",
-                       "issues": [f.model_dump() for f in topo_fundamental],
-                       "design_intent": design_intent.model_dump(),
-                       "attempts": attempt,
-                       "message": (
-                           f"Topology validation still has {len(topo_fundamental)} "
-                           f"fundamental issue(s) after {_MAX_VALIDATION_RETRIES} "
-                           f"retry(ies)."
-                       )}
-                return
-            yield {"type": "phase", "phase": "topology_gate",
-                   "detail": "Topology gate: issues noted (non-blocking)."}
+                yield {"type": "phase", "phase": "topology_gate",
+                       "detail": f"Topology gate: {len(topo_fundamental)} fundamental issue(s) noted."}
+            else:
+                yield {"type": "phase", "phase": "topology_gate",
+                       "detail": "Topology gate: issues noted (non-blocking)."}
         else:
             yield {"type": "phase", "phase": "topology_gate",
                    "detail": "Topology gate passed (or skipped)."}
 
-        # ── Phase 3: Critic Review ────────────────────────────────────
-        # Only reached when Clingo found no fundamental topology issues.
-        # The critic still has full tool access and can catch subtler
-        # topology problems that Clingo rules don't cover.
-        for event in run_critic_review(
-            user_prompt=user_prompt,
-            extracted_dict=explore_state["extracted"],
-            design_intent=design_intent,
-            messages=explore_state["messages"],
-            model=model,
-            max_critic_rounds=max_critic_rounds,
-            max_tool_rounds=max_tool_rounds,
-            clarifications=clarifications if attempt == 1 else None,
-        ):
-            yield event
-            if event["type"] == "done":
-                design_intent = event["result"]
-                explore_state = {
-                    **explore_state,
-                    "messages": event.get("messages", explore_state["messages"]),
-                }
-
-        # ── Phase 4: Component Selection ──────────────────────────────
+        # Component selection — reuse PDK grounding from iterative builder if available
         yield {"type": "pipeline_phase", "phase": "component_selection"}
-
-        selection = None
-        for event in _run_component_selection(client, design_intent, model):
-            yield event
-            if "_result" in event:
-                selection = event["_result"]
+        selection = _build_selection_from_intent(design_intent)
+        if selection is not None:
+            yield {"type": "phase", "phase": "component_selection",
+                   "detail": "Using pre-grounded PDK mappings from iterative builder."}
+        else:
+            for event in _run_component_selection(client, design_intent):
+                yield event
+                if "_result" in event:
+                    selection = event["_result"]
 
         if selection is None:
-            no_selection_error = PipelineFeedback(
-                severity="fundamental",
-                description="Component selection failed to produce any mappings.",
-                suggested_action="Ensure every ComponentIntent has a clear "
-                                 "component_type and role that maps to a PDK module.",
-            )
-            if attempt < max_attempts:
-                upstream_fb = _format_validation_feedback(
-                    [no_selection_error],
-                    "component selection", attempt, max_attempts,
-                )
-                continue
-            yield {"type": "validation_failed",
-                   "gate": "component_selection",
-                   "issues": [no_selection_error.model_dump()],
-                   "design_intent": design_intent.model_dump(),
-                   "attempts": attempt,
-                   "message": "Component selection produced no mappings after retries."}
+            yield {"type": "error",
+                   "message": "Component selection failed to produce any mappings."}
             return
 
-        # ── Phase 4.75: Validate Selection ────────────────────────────
         sel_feedback = _validate_selection(selection, design_intent)
-
-        sel_fundamental = [f for f in sel_feedback if f.severity == "fundamental"]
-        if sel_fundamental:
-            print(f"── Selection gate: {len(sel_fundamental)} fundamental "
-                  f"issue(s), attempt {attempt}/{max_attempts} ──")
-            yield {"type": "feedback", "source": "component_selection",
-                   "target": "interpreter",
-                   "issues": [f.model_dump() for f in sel_fundamental]}
-            if attempt < max_attempts:
-                upstream_fb = _format_validation_feedback(
-                    sel_fundamental, "component selection validation",
-                    attempt, max_attempts,
-                )
-                continue  # retry
-            print("── Yielding validation_failed for component_selection ──")
-            yield {"type": "validation_failed",
-                   "gate": "component_selection",
-                   "issues": [f.model_dump() for f in sel_fundamental],
-                   "design_intent": design_intent.model_dump(),
-                   "attempts": attempt,
-                   "message": (
-                       f"Component selection has {len(sel_fundamental)} fundamental "
-                       f"issue(s) after {_MAX_VALIDATION_RETRIES} retry(ies)."
-                   )}
-            return
-
         if sel_feedback:
             yield {"type": "feedback", "source": "component_selection",
                    "issues": [f.model_dump() for f in sel_feedback]}
 
-        break  # all gates passed, exit retry loop
+    else:
+        # ── Single-shot path (existing behavior) ─────────────────────
+        upstream_fb = None
+        if schematic_feedback:
+            upstream_fb = (
+                "USER SCHEMATIC FEEDBACK\n"
+                "=======================\n"
+                "The user reviewed the generated schematic and requested changes:\n\n"
+                f"{schematic_feedback}\n\n"
+                "You MUST address this feedback. Re-investigate with your tools and "
+                "revise the DesignIntent accordingly."
+            )
+
+        max_attempts = _MAX_VALIDATION_RETRIES + 1
+        design_intent = None
+        selection = None
+
+        for attempt in range(1, max_attempts + 1):
+            # ── Phase 2: Extract DesignIntent ─────────────────────────
+            if attempt > 1:
+                yield {"type": "phase", "phase": "validation_retry",
+                       "detail": f"Retry {attempt - 1}/{_MAX_VALIDATION_RETRIES}: "
+                                 f"re-running interpreter with validation feedback..."}
+
+            design_intent = None
+            for event in extract_design_intent(
+                messages=explore_state["messages"],
+                tool_log=explore_state["tool_log"],
+                extracted_dict=explore_state["extracted"],
+                model=model,
+                max_tool_rounds=max_tool_rounds,
+                clarifications=clarifications if attempt == 1 else None,
+                upstream_feedback=upstream_fb,
+                requirement_manifest_dict=explore_state.get("requirement_manifest"),
+            ):
+                yield event
+                if event["type"] == "done":
+                    design_intent = event["result"]
+                    explore_state = {
+                        **explore_state,
+                        "messages": event.get("messages", explore_state["messages"]),
+                    }
+
+            if design_intent is None:
+                yield {"type": "error", "message": "Interpreter failed to produce DesignIntent"}
+                return
+
+            # ── Phase 2.5: Topology Gate (Checkpoint A — Clingo) ──────
+            yield {"type": "pipeline_phase", "phase": "topology_gate"}
+            yield {"type": "phase", "phase": "topology_gate",
+                   "detail": "Validating topology against architecture rules..."}
+
+            topo_feedback = validate_topology(design_intent)
+            if topo_feedback:
+                topo_fundamental = [f for f in topo_feedback if f.severity == "fundamental"]
+                yield {"type": "feedback", "source": "topology_gate",
+                       "issues": [f.model_dump() for f in topo_feedback]}
+                if topo_fundamental:
+                    if attempt < max_attempts:
+                        upstream_fb = _format_validation_feedback(
+                            topo_fundamental, "topology gate (Clingo)",
+                            attempt, max_attempts,
+                        )
+                        continue
+                    yield {"type": "validation_failed",
+                           "gate": "topology_gate",
+                           "issues": [f.model_dump() for f in topo_fundamental],
+                           "design_intent": design_intent.model_dump(),
+                           "attempts": attempt,
+                           "message": (
+                               f"Topology validation still has {len(topo_fundamental)} "
+                               f"fundamental issue(s) after {_MAX_VALIDATION_RETRIES} "
+                               f"retry(ies)."
+                           )}
+                    return
+                yield {"type": "phase", "phase": "topology_gate",
+                       "detail": "Topology gate: issues noted (non-blocking)."}
+            else:
+                yield {"type": "phase", "phase": "topology_gate",
+                       "detail": "Topology gate passed (or skipped)."}
+
+            # ── Phase 3: Critic Review ────────────────────────────────
+            for event in run_critic_review(
+                user_prompt=user_prompt,
+                extracted_dict=explore_state["extracted"],
+                design_intent=design_intent,
+                messages=explore_state["messages"],
+                model=model,
+                max_critic_rounds=max_critic_rounds,
+                max_tool_rounds=max_tool_rounds,
+                clarifications=clarifications if attempt == 1 else None,
+            ):
+                yield event
+                if event["type"] == "done":
+                    design_intent = event["result"]
+                    explore_state = {
+                        **explore_state,
+                        "messages": event.get("messages", explore_state["messages"]),
+                    }
+
+            # ── Phase 4: Component Selection ──────────────────────────
+            yield {"type": "pipeline_phase", "phase": "component_selection"}
+
+            selection = None
+            for event in _run_component_selection(client, design_intent):
+                yield event
+                if "_result" in event:
+                    selection = event["_result"]
+
+            if selection is None:
+                no_selection_error = PipelineFeedback(
+                    severity="fundamental",
+                    description="Component selection failed to produce any mappings.",
+                    suggested_action="Ensure every ComponentIntent has a clear "
+                                     "component_type and role that maps to a PDK module.",
+                )
+                if attempt < max_attempts:
+                    upstream_fb = _format_validation_feedback(
+                        [no_selection_error],
+                        "component selection", attempt, max_attempts,
+                    )
+                    continue
+                yield {"type": "validation_failed",
+                       "gate": "component_selection",
+                       "issues": [no_selection_error.model_dump()],
+                       "design_intent": design_intent.model_dump(),
+                       "attempts": attempt,
+                       "message": "Component selection produced no mappings after retries."}
+                return
+
+            # ── Phase 4.75: Validate Selection ────────────────────────
+            sel_feedback = _validate_selection(selection, design_intent)
+
+            sel_fundamental = [f for f in sel_feedback if f.severity == "fundamental"]
+            if sel_fundamental:
+                print(f"── Selection gate: {len(sel_fundamental)} fundamental "
+                      f"issue(s), attempt {attempt}/{max_attempts} ──")
+                yield {"type": "feedback", "source": "component_selection",
+                       "target": "interpreter",
+                       "issues": [f.model_dump() for f in sel_fundamental]}
+                if attempt < max_attempts:
+                    upstream_fb = _format_validation_feedback(
+                        sel_fundamental, "component selection validation",
+                        attempt, max_attempts,
+                    )
+                    continue
+                print("── Yielding validation_failed for component_selection ──")
+                yield {"type": "validation_failed",
+                       "gate": "component_selection",
+                       "issues": [f.model_dump() for f in sel_fundamental],
+                       "design_intent": design_intent.model_dump(),
+                       "attempts": attempt,
+                       "message": (
+                           f"Component selection has {len(sel_fundamental)} fundamental "
+                           f"issue(s) after {_MAX_VALIDATION_RETRIES} retry(ies)."
+                       )}
+                return
+
+            if sel_feedback:
+                yield {"type": "feedback", "source": "component_selection",
+                       "issues": [f.model_dump() for f in sel_feedback]}
+
+            break  # all gates passed, exit retry loop
 
     # ── Phase 4.8: LLM Compliance Check ──────────────────────────────
     yield {"type": "pipeline_phase", "phase": "compliance_check"}
     yield {"type": "phase", "phase": "compliance_check",
            "detail": "Verifying selected modules match design intent..."}
 
-    compliance_feedback = _llm_compliance_check(client, selection, design_intent, model)
+    compliance_feedback = _llm_compliance_check(client, selection, design_intent)
     if compliance_feedback:
         yield {"type": "feedback", "source": "compliance_check",
                "issues": [f.model_dump() for f in compliance_feedback]}
@@ -1408,16 +1694,41 @@ def run_pipeline_finalize(
         yield {"type": "phase", "phase": "ar_parameter_gate",
                "detail": "AR parameter gate passed (or skipped)."}
 
-    # ── Phase 5b: LLM Edge Routing ───────────────────────────────────
+    # ── Phase 5b: Edge Routing ─────────────────────────────────────
+    # If the DSL already has edges (iterative builder), inject them into
+    # the DOT directly.  Otherwise fall back to LLM edge routing.
     dot_with_edges: Optional[str] = None
-    for event in _run_edge_routing(client, dot_no_edges, preschematic, model):
-        yield event
-        if "_result" in event:
-            dot_with_edges = event["_result"]
+    if circuit_dsl.get("edges"):
+        yield {"type": "phase", "phase": "edge_routing",
+               "detail": "Using port-level edges from iterative builder (skipping LLM routing)."}
+        edge_lines: list[str] = []
+        for _eid, einfo in circuit_dsl["edges"].items():
+            link = einfo.get("link", "")
+            parts = link.split(": ")
+            if len(parts) == 2:
+                src_node, src_port = parts[0].split(",", 1)
+                tgt_node, tgt_port = parts[1].split(",", 1)
+                edge_lines.append(
+                    f"  {src_node}:{src_port} -- {tgt_node}:{tgt_port};"
+                )
+        # Insert edges before the closing brace of the DOT
+        dot_lines = dot_no_edges.rstrip().rstrip("}").rstrip()
+        dot_with_edges = dot_lines + "\n" + "\n".join(edge_lines) + "\n}"
+        yield {"type": "edge_routing_done", "_result": dot_with_edges}
+    else:
+        for event in _run_edge_routing(client, dot_no_edges, preschematic):
+            yield event
+            if "_result" in event:
+                dot_with_edges = event["_result"]
 
     if dot_with_edges is None:
         yield {"type": "error", "message": "Edge routing failed"}
         return
+
+    # ── Phase 5c: Visual Critic (optional) ───────────────────────────
+    yield {"type": "pipeline_phase", "phase": "visual_critic"}
+    for vc_event in _run_visual_critic(client, user_prompt, design_intent, dot_with_edges):
+        yield vc_event
 
     # ── Phase 6: Footprints + Layout ─────────────────────────────────
     yield {"type": "pipeline_phase", "phase": "layout"}
@@ -1476,6 +1787,429 @@ def run_pipeline_finalize(
 
 
 # ---------------------------------------------------------------------------
+# Unified orchestration strategy (single continuous LLM session)
+# ---------------------------------------------------------------------------
+
+_ASK_USER_TOOL: dict = {
+    "type": "function",
+    "function": {
+        "name": "ask_user",
+        "description": (
+            "Ask the user a clarification question when there is genuine "
+            "ambiguity in their design request that you cannot resolve through "
+            "tool calls alone.  Use this ONLY when a design decision critically "
+            "depends on user preference (e.g. which tuning mechanism, target "
+            "wavelength band, specific port count).  Do NOT ask about things "
+            "you can determine from the PDK or KG."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The question to ask the user",
+                },
+                "context": {
+                    "type": "string",
+                    "description": (
+                        "Why you need this information — what you found in "
+                        "tool results that raised the ambiguity"
+                    ),
+                },
+                "options": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Concrete answer choices if applicable "
+                        "(empty array for open-ended questions)"
+                    ),
+                },
+                "default": {
+                    "type": "string",
+                    "description": "What you would assume if the user doesn't answer",
+                },
+            },
+            "required": ["question", "context", "default"],
+        },
+    },
+}
+
+_UNIFIED_SYSTEM_PROMPT = (
+    AGENT_SYSTEM_PROMPT
+    + "\n\n--- BUILDER INSTRUCTIONS ---\n\n"
+    + ITERATIVE_BUILD_PROMPT
+    + "\n\n--- OVERALL WORKFLOW ---\n\n"
+    "You are operating in UNIFIED mode. In a single session you will:\n"
+    "1. Explore the user's request using PDK and KG tools.\n"
+    "2. If you encounter genuine ambiguity that cannot be resolved from your "
+    "tool results, use the ask_user tool to get a clarification from the user. "
+    "Only ask when the design truly depends on user preference — do not ask "
+    "about things you can determine from the PDK or KG.\n"
+    "3. Once you understand the design, build the circuit using builder tools "
+    "(add_component, connect, replicate_stage, get_open_ports, get_state).\n"
+    "4. When the circuit is complete, call finalize.\n\n"
+    "Do NOT wait for further instructions between exploration and building — "
+    "transition seamlessly once all ambiguities are resolved."
+)
+
+
+def run_pipeline_unified(
+    user_prompt: str,
+    model: str = "gpt-5.4",
+    max_rounds: int = 200,
+    resume_state: Optional[dict] = None,
+    schematic_feedback: Optional[str] = None,
+) -> Generator[PipelineEvent, None, None]:
+    """Unified orchestration: single continuous LLM session for exploration + building.
+
+    The LLM explores the design space and builds the circuit in one session,
+    then deterministic gates run sequentially on the result.
+
+    When the LLM calls the ``ask_user`` tool, the generator yields a
+    ``user_question`` event containing the full session state and returns.
+    The caller (Streamlit) collects the answer and resumes by passing
+    ``resume_state`` on the next invocation.
+
+    If ``schematic_feedback`` is provided (Tier 3 architectural re-run),
+    the feedback is appended to the user prompt so the LLM can revise
+    the design in a fresh unified session.
+
+    Yields the same event types as ``run_pipeline_finalize``, plus
+    ``{"type": "user_question", ...}`` when disambiguation is needed.
+    """
+    import logging
+    _log = logging.getLogger(__name__)
+
+    unified_tools = [_ASK_USER_TOOL] + (_ALL_BUILDER_TOOLS or [])
+
+    client = create_client(model)
+
+    if resume_state:
+        graph = resume_state["graph"]
+        messages = resume_state["messages"]
+        tool_log = resume_state["tool_log"]
+        start_round = resume_state["round_num"]
+        finalized = resume_state.get("finalized", False)
+
+        pending_calls = resume_state["pending_ask_user_calls"]
+        user_answers = resume_state.get("user_answers", {})
+        for tc in pending_calls:
+            question_text = ""
+            try:
+                question_text = json.loads(tc.arguments).get("question", "")
+            except Exception:
+                pass
+            answer = user_answers.get(question_text, "(no answer provided)")
+            messages.append(
+                client.tool_result_message(
+                    tc, json.dumps({"user_answer": answer})
+                )
+            )
+
+        yield {"type": "phase", "phase": "unified_session",
+               "detail": f"Resuming with {len(user_answers)} answer(s)..."}
+    else:
+        graph = CircuitGraph(pdk_catalog=_PDK_CATALOG)
+        effective_prompt = user_prompt
+        if schematic_feedback:
+            effective_prompt = (
+                f"{user_prompt}\n\n"
+                f"SCHEMATIC REVISION REQUEST\n"
+                f"==========================\n"
+                f"A previous design was generated for this prompt but the user "
+                f"reviewed it and requested architectural changes:\n\n"
+                f"{schematic_feedback}\n\n"
+                f"You MUST address this feedback when building the revised circuit."
+            )
+        messages = [
+            {"role": "system", "content": _UNIFIED_SYSTEM_PROMPT},
+            {"role": "user", "content": effective_prompt},
+        ]
+        tool_log = []
+        start_round = 0
+        finalized = False
+
+        phase_detail = "Re-running unified session with user feedback..." if schematic_feedback \
+            else f"Starting unified session (max {max_rounds} rounds)..."
+        yield {"type": "pipeline_phase", "phase": "unified_session"}
+        yield {"type": "phase", "phase": "unified_session",
+               "detail": phase_detail}
+
+    for round_num in range(start_round, max_rounds):
+        try:
+            resp = client.complete(
+                messages,
+                tools=unified_tools,
+            )
+        except Exception as exc:
+            _log.error("API error on round %d: %s", round_num + 1, exc)
+            yield {"type": "error", "message": f"LLM API error: {exc}"}
+            return
+
+        messages.append(client.assistant_message(resp))
+
+        if resp.tool_calls:
+            tool_names = [tc.name for tc in resp.tool_calls]
+            yield {"type": "phase", "phase": "unified_session",
+                   "detail": f"Round {round_num + 1}: "
+                             f"{len(resp.tool_calls)} tool call(s) — "
+                             f"{', '.join(tool_names)}"}
+
+            # Separate ask_user calls from the rest so we can process
+            # normal tools first, then pause for user input if needed.
+            ask_user_calls: list = []
+
+            for tc in resp.tool_calls:
+                if tc.name == "ask_user":
+                    ask_user_calls.append(tc)
+                    continue
+
+                try:
+                    parsed_args = json.loads(tc.arguments)
+                except json.JSONDecodeError:
+                    parsed_args = {}
+                    messages.append(
+                        client.tool_result_message(
+                            tc, json.dumps({"error": "Invalid JSON arguments"})
+                        )
+                    )
+                    continue
+
+                tool_log.append((tc.name, parsed_args))
+                yield {"type": "tool_call", "name": tc.name, "args": parsed_args}
+
+                if tc.name in _BUILDER_TOOL_NAMES:
+                    try:
+                        result_str = _dispatch_builder_tool(tc.name, tc.arguments, graph)
+                    except Exception as exc:
+                        result_str = json.dumps({"error": str(exc)})
+                else:
+                    _, result_str = _execute_tool_raw(tc.name, tc.arguments)
+
+                yield {"type": "tool_result", "name": tc.name, "result": result_str}
+                messages.append(client.tool_result_message(tc, result_str))
+
+                if tc.name in _BUILDER_TOOL_NAMES:
+                    dot = graph.to_dot(highlight=True)
+                    state = graph.get_state()
+                    yield {
+                        "type": "circuit_updated",
+                        "dot": dot,
+                        "component_count": state["total_components"],
+                        "connection_count": state["total_connections"],
+                    }
+
+                if tc.name == "finalize":
+                    try:
+                        result_data = json.loads(result_str)
+                    except (json.JSONDecodeError, TypeError):
+                        result_data = {}
+                    if result_data.get("status") != "error":
+                        finalized = True
+
+            # If the LLM asked clarification questions, pause the generator
+            # and hand control back to the UI for user input.
+            if ask_user_calls and not finalized:
+                questions = []
+                for tc in ask_user_calls:
+                    try:
+                        q_args = json.loads(tc.arguments)
+                    except json.JSONDecodeError:
+                        q_args = {"question": "(parse error)", "context": "",
+                                  "default": ""}
+                    questions.append(q_args)
+                    yield {"type": "tool_call", "name": "ask_user", "args": q_args}
+
+                yield {
+                    "type": "user_question",
+                    "questions": questions,
+                    "resume_state": {
+                        "graph": graph,
+                        "messages": messages,
+                        "tool_log": tool_log,
+                        "round_num": round_num,
+                        "finalized": finalized,
+                        "pending_ask_user_calls": ask_user_calls,
+                        "model": model,
+                    },
+                }
+                return  # Pause — caller will resume with answers
+
+            if finalized:
+                break
+        else:
+            content = resp.content or ""
+            if content.strip():
+                yield {"type": "agent_text", "content": content}
+            if finalized:
+                break
+
+    if not finalized:
+        graph.finalize("Untitled Circuit", "Auto-finalized — max rounds reached.", force=True)
+        yield {"type": "phase", "phase": "unified_session",
+               "detail": "Max rounds reached — auto-finalizing."}
+
+    design_intent = graph.to_design_intent()
+
+    yield {"type": "done", "result": design_intent}
+    yield {"type": "phase", "phase": "unified_session",
+           "detail": f"Session complete: {len(design_intent.components)} components, "
+                     f"{len(design_intent.connections)} connections."}
+
+    # ── Deterministic gates ───────────────────────────────────────────
+
+    # Topology gate
+    yield {"type": "pipeline_phase", "phase": "topology_gate"}
+    yield {"type": "phase", "phase": "topology_gate",
+           "detail": "Validating topology against architecture rules..."}
+
+    topo_feedback = validate_topology(design_intent)
+    if topo_feedback:
+        topo_fundamental = [f for f in topo_feedback if f.severity == "fundamental"]
+        yield {"type": "feedback", "source": "topology_gate",
+               "issues": [f.model_dump() for f in topo_feedback]}
+        if topo_fundamental:
+            yield {"type": "phase", "phase": "topology_gate",
+                   "detail": f"Topology gate: {len(topo_fundamental)} fundamental issue(s)."}
+        else:
+            yield {"type": "phase", "phase": "topology_gate",
+                   "detail": "Topology gate: issues noted (non-blocking)."}
+    else:
+        yield {"type": "phase", "phase": "topology_gate",
+               "detail": "Topology gate passed (or skipped)."}
+
+    # Component selection — reuse PDK grounding from unified builder when available
+    yield {"type": "pipeline_phase", "phase": "component_selection"}
+    selection = _build_selection_from_intent(design_intent)
+    if selection is not None:
+        yield {"type": "phase", "phase": "component_selection",
+               "detail": "Using pre-grounded PDK mappings from unified builder."}
+    else:
+        for event in _run_component_selection(client, design_intent):
+            yield event
+            if "_result" in event:
+                selection = event["_result"]
+
+    if selection is None:
+        yield {"type": "error", "message": "Component selection failed."}
+        return
+
+    sel_feedback = _validate_selection(selection, design_intent)
+    if sel_feedback:
+        yield {"type": "feedback", "source": "component_selection",
+               "issues": [f.model_dump() for f in sel_feedback]}
+
+    # Compliance check
+    compliance_feedback = _llm_compliance_check(client, selection, design_intent)
+    if compliance_feedback:
+        yield {"type": "feedback", "source": "compliance_check",
+               "issues": [f.model_dump() for f in compliance_feedback]}
+
+    # Build circuit DSL
+    yield {"type": "pipeline_phase", "phase": "schematic_building"}
+    circuit_dsl = _build_circuit_dsl(design_intent, selection)
+    dot_no_edges = circuit_dsl_to_dot(json.dumps(circuit_dsl))
+
+    if dot_no_edges.startswith("{"):
+        parsed = json.loads(dot_no_edges)
+        if "error" in parsed:
+            yield {"type": "error", "message": f"DOT generation failed: {parsed['error']}"}
+            return
+
+    yield {"type": "dot_draft", "dot": dot_no_edges}
+    preschematic = design_intent.to_dot()
+
+    # AR Parameter gate
+    yield {"type": "pipeline_phase", "phase": "ar_parameter_gate"}
+    ar_param_feedback = validate_parameters(circuit_dsl)
+    if ar_param_feedback:
+        yield {"type": "feedback", "source": "ar_parameter_gate",
+               "issues": [f.model_dump() for f in ar_param_feedback]}
+
+    # Edge routing — use builder edges if available
+    dot_with_edges: Optional[str] = None
+    if circuit_dsl.get("edges"):
+        yield {"type": "phase", "phase": "edge_routing",
+               "detail": "Using port-level edges from builder (skipping LLM routing)."}
+        edge_lines: list[str] = []
+        for _eid, einfo in circuit_dsl["edges"].items():
+            link = einfo.get("link", "")
+            parts = link.split(": ")
+            if len(parts) == 2:
+                src_node, src_port = parts[0].split(",", 1)
+                tgt_node, tgt_port = parts[1].split(",", 1)
+                edge_lines.append(f"  {src_node}:{src_port} -- {tgt_node}:{tgt_port};")
+        dot_lines = dot_no_edges.rstrip().rstrip("}").rstrip()
+        dot_with_edges = dot_lines + "\n" + "\n".join(edge_lines) + "\n}"
+    else:
+        for event in _run_edge_routing(client, dot_no_edges, preschematic):
+            yield event
+            if "_result" in event:
+                dot_with_edges = event["_result"]
+
+    if dot_with_edges is None:
+        yield {"type": "error", "message": "Edge routing failed"}
+        return
+
+    # Phase 5c: Visual critic (optional)
+    yield {"type": "pipeline_phase", "phase": "visual_critic"}
+    for vc_event in _run_visual_critic(client, user_prompt, design_intent, dot_with_edges):
+        yield vc_event
+
+    # Layout
+    yield {"type": "pipeline_phase", "phase": "layout"}
+    footprints: dict[str, list[float]] = {}
+    for mapping in selection.mappings:
+        try:
+            fp = json.loads(get_component_footprint(mapping.pdk_module))
+            if "error" not in fp:
+                footprints[mapping.component_id] = [fp["dx_um"], fp["dy_um"]]
+        except Exception:
+            pass
+
+    layout_result_raw = compute_layout(dot_with_edges, json.dumps(footprints))
+    try:
+        layout_result = json.loads(layout_result_raw)
+    except (json.JSONDecodeError, TypeError):
+        layout_result = {"positions": {}, "error": "Layout computation returned invalid JSON"}
+
+    positions = layout_result.get("positions", {})
+    yield {"type": "layout_done", "positions": positions}
+
+    # Schematic validation
+    sch_feedback = _validate_schematic(dot_with_edges, design_intent)
+    if sch_feedback:
+        yield {"type": "feedback", "source": "schematic_builder",
+               "issues": [f.model_dump() for f in sch_feedback]}
+
+    # Export
+    yield {"type": "pipeline_phase", "phase": "export"}
+    try:
+        ports_result = json.loads(find_open_ports(dot_with_edges))
+    except (json.JSONDecodeError, TypeError):
+        ports_result = {"open_ports": [], "circuit_ports": {}}
+
+    _edges_dot_to_dsl(dot_with_edges, circuit_dsl)
+    _enrich_circuit_dsl(
+        circuit_dsl, selection, positions,
+        footprints, ports_result.get("circuit_ports", {}),
+    )
+
+    gf_netlist_yaml = export_gf_netlist(json.dumps(circuit_dsl))
+
+    yield {"type": "pipeline_done", "result": {
+        "design_intent": design_intent.model_dump(),
+        "selection": selection.model_dump(),
+        "circuit_dsl": circuit_dsl,
+        "dot_string": dot_with_edges,
+        "gf_netlist_yaml": gf_netlist_yaml,
+        "open_ports": ports_result,
+        "footprints": footprints,
+        "positions": positions,
+    }}
+
+
+# ---------------------------------------------------------------------------
 # Tiered feedback dispatcher
 # ---------------------------------------------------------------------------
 
@@ -1488,18 +2222,20 @@ def run_pipeline_with_feedback(
     footprints: dict,
     explore_state: dict,
     user_prompt: str,
-    model: str = "o3-mini",
+    model: str = "gpt-5.4",
     clarifications: Optional[dict[str, str]] = None,
     max_tool_rounds: int = 10,
     max_critic_rounds: int = 2,
+    extraction_mode: str = "single_shot",
+    orchestration: str = "rigid",
 ) -> Generator[PipelineEvent, None, None]:
     """Classify user schematic feedback and route to the cheapest pipeline tier.
 
     Tier 1 (edge_edit)      -> run_pipeline_patch_edges
     Tier 2 (component_swap) -> run_pipeline_reselect
-    Tier 3 (architectural)  -> run_pipeline_finalize (full re-run)
+    Tier 3 (architectural)  -> run_pipeline_finalize (full re-run, preserves orchestration mode)
     """
-    client = OpenAI()
+    client = create_client(model)
 
     yield {"type": "pipeline_phase", "phase": "feedback_classification"}
     yield {"type": "phase", "phase": "feedback_classification",
@@ -1507,7 +2243,7 @@ def run_pipeline_with_feedback(
 
     try:
         classification = _classify_feedback(
-            client, feedback_text, circuit_dsl, selection_dict, dot_string, model,
+            client, feedback_text, circuit_dsl, selection_dict, dot_string,
         )
     except Exception as exc:
         yield {"type": "phase", "phase": "feedback_classification",
@@ -1541,8 +2277,9 @@ def run_pipeline_with_feedback(
         )
 
     else:
+        mode_label = "unified session" if orchestration == "unified" else "full pipeline"
         yield {"type": "phase", "phase": "feedback_classification",
-               "detail": "Routing to full pipeline re-run (Tier 3: architectural)."}
+               "detail": f"Routing to {mode_label} re-run (Tier 3: architectural)."}
         yield from run_pipeline_finalize(
             explore_state=explore_state,
             user_prompt=user_prompt,
@@ -1551,6 +2288,8 @@ def run_pipeline_with_feedback(
             max_tool_rounds=max_tool_rounds,
             max_critic_rounds=max_critic_rounds,
             schematic_feedback=feedback_text,
+            extraction_mode=extraction_mode,
+            orchestration=orchestration,
         )
 
 
@@ -1641,7 +2380,7 @@ def run_layout_simulation(
 
 def run_pipeline(
     user_prompt: str,
-    model: str = "o3-mini",
+    model: str = "gpt-5.4",
     verbose: bool = True,
     max_tool_rounds: int = 15,
     max_grounding_rounds: int = 5,

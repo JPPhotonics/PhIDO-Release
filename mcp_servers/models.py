@@ -107,6 +107,11 @@ class ComponentIntent(BaseModel):
         description="Sub-type qualifier: 'mmi', 'directional_coupler', 'add_drop', "
                     "'all_pass', '90_degree', 'balanced', 'unbalanced', 'heater', 'pin'",
     )
+    pdk_module: Optional[str] = Field(
+        None,
+        description="PDK module name if already grounded (e.g. 'mzi_2x2_pn_diode'). "
+                    "Set by the iterative builder; None for single-shot extraction.",
+    )
     # Provenance
     confidence: float = Field(1.0, description="Extraction confidence 0.0-1.0")
     source_span: Optional[str] = Field(None, description="Verbatim text this was extracted from")
@@ -115,6 +120,8 @@ class Connection(BaseModel):
     """A hybrid connection: component IDs + natural language description."""
     from_component: str = Field(..., description="Source component id (e.g. C1)")
     to_component: str = Field(..., description="Target component id (e.g. C2)")
+    from_port: Optional[str] = Field(None, description="Source port name (e.g. 'o3'). Set by iterative builder.")
+    to_port: Optional[str] = Field(None, description="Target port name (e.g. 'o2'). Set by iterative builder.")
     description: str = Field(..., description="How/why they connect, in natural language")
     # Provenance
     confidence: float = Field(1.0, description="Extraction confidence 0.0-1.0")

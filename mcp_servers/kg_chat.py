@@ -38,6 +38,21 @@ if "messages" not in st.session_state:
 if "chat_display" not in st.session_state:
     st.session_state.chat_display = []  # [{role, content, tool_trace?}]
 
+_MODEL_OPTIONS = [
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "gemini-3.1-pro-preview",
+    "gemini-3-flash-preview",
+    "gpt-4o",
+    "gpt-4o-mini",
+    "gpt-5.4",
+    "o3-mini",
+    "claude-sonnet-4-20250514",
+    "claude-3.5-sonnet-20241022",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+]
+
 if "model" not in st.session_state:
     st.session_state.model = "gpt-4o"
 
@@ -48,8 +63,9 @@ with st.sidebar:
     st.title("Settings")
     st.session_state.model = st.selectbox(
         "Model",
-        ["gpt-4o", "gpt-4o-mini", "o3-mini"],
-        index=["gpt-4o", "gpt-4o-mini", "o3-mini"].index(st.session_state.model),
+        _MODEL_OPTIONS,
+        index=_MODEL_OPTIONS.index(st.session_state.model)
+        if st.session_state.model in _MODEL_OPTIONS else 0,
     )
 
     if st.button("Clear conversation"):

@@ -1,0 +1,649 @@
+{
+    "version": "1",
+    "types": [
+        {
+            "name": "OpticalNetworkType",
+            "values": [
+                {
+                    "value": "BENES",
+                    "description": "Benes switching network"
+                },
+                {
+                    "value": "CLEMENTS",
+                    "description": "Clements unitary mesh"
+                },
+                {
+                    "value": "RECK",
+                    "description": "Reck unitary mesh"
+                },
+                {
+                    "value": "CROSSBAR",
+                    "description": "Crossbar switching network"
+                },
+                {
+                    "value": "SPANKE",
+                    "description": "Spanke switching network"
+                },
+                {
+                    "value": "OpticalNetworkType_OTHER",
+                    "description": "Other type of optical network not listed"
+                }
+            ],
+            "description": "The type of NxN optical network architecture"
+        }
+    ],
+    "rules": [
+        {
+            "id": "KWHN1SRR6I45",
+            "expression": "(=> waveguide_width_specified\n    (= waveguide_width_valid\n       (> waveguide_width 0)))",
+            "alternateExpression": "if waveguide_width_specified is true, then waveguide_width_valid is equal to waveguide_width is greater than 0"
+        },
+        {
+            "id": "HFCRSUE8ID3G",
+            "expression": "(=> waveguide_bend_radius_specified\n    (= waveguide_bend_radius_valid\n       (> waveguide_bend_radius\n          0)))",
+            "alternateExpression": "if waveguide_bend_radius_specified is true, then waveguide_bend_radius_valid is equal to waveguide_bend_radius is greater than 0"
+        },
+        {
+            "id": "I64L3PGLAVKV",
+            "expression": "(=> directional_coupler_gap_specified\n    (= directional_coupler_gap_valid\n       (> directional_coupler_gap\n          0)))",
+            "alternateExpression": "if directional_coupler_gap_specified is true, then directional_coupler_gap_valid is equal to directional_coupler_gap is greater than 0"
+        },
+        {
+            "id": "JBFPJAM32YWB",
+            "expression": "(=> ring_resonator_radius_specified\n    (= ring_resonator_radius_valid\n       (> ring_resonator_radius\n          0)))",
+            "alternateExpression": "if ring_resonator_radius_specified is true, then ring_resonator_radius_valid is equal to ring_resonator_radius is greater than 0"
+        },
+        {
+            "id": "ZGMHRP7Q8VRF",
+            "expression": "(=> mzi_path_length_difference_specified\n    (>= mzi_path_length_difference\n        0))",
+            "alternateExpression": "if mzi_path_length_difference_specified is true, then mzi_path_length_difference is at least 0"
+        },
+        {
+            "id": "ZUD1QR5KH9GG",
+            "expression": "(=> splitting_ratio_specified\n    (= splitting_ratio_valid\n       (and (>= splitting_ratio 0)\n            (<= splitting_ratio 1))))",
+            "alternateExpression": "if splitting_ratio_specified is true, then splitting_ratio_valid is equal to splitting_ratio is at least 0 and splitting_ratio is no more than 1"
+        },
+        {
+            "id": "K35QAPWNOWDX",
+            "expression": "(=> waveguide_length_specified\n    (= waveguide_length_valid\n       (> waveguide_length 0)))",
+            "alternateExpression": "if waveguide_length_specified is true, then waveguide_length_valid is equal to waveguide_length is greater than 0"
+        },
+        {
+            "id": "F03S2HKR4PPY",
+            "expression": "(=> taper_length_specified\n    (= taper_length_valid\n       (> taper_length 0)))",
+            "alternateExpression": "if taper_length_specified is true, then taper_length_valid is equal to taper_length is greater than 0"
+        },
+        {
+            "id": "PWO2DZPP27LR",
+            "expression": "(=> phase_shifter_length_specified\n    (= phase_shifter_length_valid\n       (> phase_shifter_length\n          0)))",
+            "alternateExpression": "if phase_shifter_length_specified is true, then phase_shifter_length_valid is equal to phase_shifter_length is greater than 0"
+        },
+        {
+            "id": "J8TJUXPR1LEW",
+            "expression": "(=> bend_angle_specified\n    (= bend_angle_valid\n       (and (> bend_angle 0)\n            (<= bend_angle 360))))",
+            "alternateExpression": "if bend_angle_specified is true, then bend_angle_valid is equal to bend_angle is greater than 0 and bend_angle is no more than 360"
+        },
+        {
+            "id": "ONQ4GWCFIAKN",
+            "expression": "(=> mzi_topology_intended\n    (and (= mzi_splitting_element_count\n            1)\n         (= mzi_combining_element_count\n            1)\n         (= mzi_parallel_arm_count\n            2)))",
+            "alternateExpression": "if mzi_topology_intended is true, then the following 3 statements are true: 1) mzi_splitting_element_count is equal to 1; 2) mzi_combining_element_count is equal to 1; 3) mzi_parallel_arm_count is equal to 2"
+        },
+        {
+            "id": "VXUDYZMO3A21",
+            "expression": "(=> (and mzi_topology_intended\n         (not (and mzi_arms_share_same_splitter\n                   mzi_arms_share_same_combiner)))\n    (not mzi_interferometric_function_valid))",
+            "alternateExpression": "if mzi_topology_intended is true and at least one of the following 2 statements is false: 1) mzi_arms_share_same_splitter is true; 2) mzi_arms_share_same_combiner is true, then mzi_interferometric_function_valid is false"
+        },
+        {
+            "id": "C56XX1JGOWRW",
+            "expression": "(=> balanced_mzi_specified\n    (= balanced_mzi_specification_valid\n       (= mzi_path_length_difference\n          0)))",
+            "alternateExpression": "if balanced_mzi_specified is true, then balanced_mzi_specification_valid is equal to mzi_path_length_difference is equal to 0"
+        },
+        {
+            "id": "NX87SLLLWGIJ",
+            "expression": "(=> unbalanced_mzi_specified\n    (= unbalanced_mzi_specification_valid\n       (> mzi_path_length_difference\n          0)))",
+            "alternateExpression": "if unbalanced_mzi_specified is true, then unbalanced_mzi_specification_valid is equal to mzi_path_length_difference is greater than 0"
+        },
+        {
+            "id": "NCXDTVLGSUDQ",
+            "expression": "(=> (and binary_splitter_tree_specified\n         (= binary_splitter_tree_N\n            4))\n    (and (= binary_splitter_tree_stage_count\n            2)\n         (= binary_splitter_tree_splitter_count\n            3)))",
+            "alternateExpression": "if binary_splitter_tree_specified is true and binary_splitter_tree_N is equal to 4, then binary_splitter_tree_stage_count is equal to 2 and binary_splitter_tree_splitter_count is equal to 3"
+        },
+        {
+            "id": "PCXY1829YGH5",
+            "expression": "(=> (and binary_splitter_tree_specified\n         (= binary_splitter_tree_N\n            8))\n    (and (= binary_splitter_tree_stage_count\n            3)\n         (= binary_splitter_tree_splitter_count\n            7)))",
+            "alternateExpression": "if binary_splitter_tree_specified is true and binary_splitter_tree_N is equal to 8, then binary_splitter_tree_stage_count is equal to 3 and binary_splitter_tree_splitter_count is equal to 7"
+        },
+        {
+            "id": "V6KNIKXU9678",
+            "expression": "(=> (and binary_splitter_tree_specified\n         (= binary_splitter_tree_N\n            16))\n    (and (= binary_splitter_tree_stage_count\n            4)\n         (= binary_splitter_tree_splitter_count\n            15)))",
+            "alternateExpression": "if binary_splitter_tree_specified is true and binary_splitter_tree_N is equal to 16, then binary_splitter_tree_stage_count is equal to 4 and binary_splitter_tree_splitter_count is equal to 15"
+        },
+        {
+            "id": "KIQPXRI22TCV",
+            "expression": "(=> splitter_tree_equal_power_required\n    all_splitters_have_50_50_ratio)",
+            "alternateExpression": "if splitter_tree_equal_power_required is true, then all_splitters_have_50_50_ratio is true"
+        },
+        {
+            "id": "NF5RXU73GI97",
+            "expression": "(=> binary_splitter_tree_specified\n    (= binary_splitter_tree_feasible\n       binary_splitter_tree_N_is_power_of_2))",
+            "alternateExpression": "if binary_splitter_tree_specified is true, then binary_splitter_tree_feasible is equal to binary_splitter_tree_N_is_power_of_2"
+        },
+        {
+            "id": "F8KQ8DLON3L7",
+            "expression": "(=> (and benes_network_specified\n         (= benes_network_N 4))\n    (and (= benes_network_stage_count\n            3)\n         (= benes_network_switches_per_stage\n            2)\n         (= benes_network_total_switches\n            6)))",
+            "alternateExpression": "if benes_network_specified is true and benes_network_N is equal to 4, then the following 3 statements are true: 1) benes_network_stage_count is equal to 3; 2) benes_network_switches_per_stage is equal to 2; 3) benes_network_total_switches is equal to 6"
+        },
+        {
+            "id": "HANNXFAHARM1",
+            "expression": "(=> (and benes_network_specified\n         (= benes_network_N 8))\n    (and (= benes_network_stage_count\n            5)\n         (= benes_network_switches_per_stage\n            4)\n         (= benes_network_total_switches\n            20)))",
+            "alternateExpression": "if benes_network_specified is true and benes_network_N is equal to 8, then the following 3 statements are true: 1) benes_network_stage_count is equal to 5; 2) benes_network_switches_per_stage is equal to 4; 3) benes_network_total_switches is equal to 20"
+        },
+        {
+            "id": "J0FZ46JUA3UM",
+            "expression": "(=> (and clements_mesh_specified\n         (= clements_mesh_N 4))\n    (= clements_mesh_mzi_count\n       6))",
+            "alternateExpression": "if clements_mesh_specified is true and clements_mesh_N is equal to 4, then clements_mesh_mzi_count is equal to 6"
+        },
+        {
+            "id": "ODS0ZU172EZ2",
+            "expression": "(=> (and clements_mesh_specified\n         (= clements_mesh_N 8))\n    (= clements_mesh_mzi_count\n       28))",
+            "alternateExpression": "if clements_mesh_specified is true and clements_mesh_N is equal to 8, then clements_mesh_mzi_count is equal to 28"
+        },
+        {
+            "id": "CMH0BOBXPJX9",
+            "expression": "(=> optical_network_specified\n    (and (= optical_network_input_port_count\n            optical_network_N)\n         (= optical_network_output_port_count\n            optical_network_N)))",
+            "alternateExpression": "if optical_network_specified is true, then optical_network_input_port_count is equal to optical_network_N and optical_network_output_port_count is equal to optical_network_N"
+        },
+        {
+            "id": "XYYPXE6XTPXQ",
+            "expression": "(=> optical_network_specified\n    (not (= optical_network_type\n            OpticalNetworkType_OTHER)))",
+            "alternateExpression": "if optical_network_specified is true, then optical_network_type is not equal to OpticalNetworkType_OTHER"
+        },
+        {
+            "id": "UU8RCI006RJD",
+            "expression": "(=> wdm_demux_with_rings_specified\n    (= wdm_demux_ring_count_sufficient\n       (>= wdm_demux_ring_resonator_count\n           wdm_demux_channel_count)))",
+            "alternateExpression": "if wdm_demux_with_rings_specified is true, then wdm_demux_ring_count_sufficient is equal to wdm_demux_ring_resonator_count is at least wdm_demux_channel_count"
+        },
+        {
+            "id": "TIOPN9KDMSJT",
+            "expression": "(=> wdm_uses_ring_resonators\n    (= wdm_ring_design_valid\n       all_ring_resonators_have_distinct_wavelengths))",
+            "alternateExpression": "if wdm_uses_ring_resonators is true, then wdm_ring_design_valid is equal to all_ring_resonators_have_distinct_wavelengths"
+        },
+        {
+            "id": "QHYASTH54K73",
+            "expression": "(=> add_drop_ring_for_wdm_specified\n    (= add_drop_ring_configuration_valid\n       (and add_drop_ring_is_double_bus\n            (= add_drop_ring_port_count\n               4))))",
+            "alternateExpression": "if add_drop_ring_for_wdm_specified is true, then add_drop_ring_configuration_valid is equal to add_drop_ring_is_double_bus is true and add_drop_ring_port_count is equal to 4"
+        },
+        {
+            "id": "N3586VS7N5CW",
+            "expression": "(=> qpsk_modulator_specified\n    (= qpsk_design_complete\n       (and qpsk_has_1x2_splitter\n            (= qpsk_mzm_count 2)\n            qpsk_has_90_degree_phase_shifter\n            qpsk_has_2x1_combiner)))",
+            "alternateExpression": "if qpsk_modulator_specified is true, then qpsk_design_complete is equal to the following 4 statements are true: 1) qpsk_has_1x2_splitter is true; 2) qpsk_mzm_count is equal to 2; 3) qpsk_has_90_degree_phase_shifter is true; 4) qpsk_has_2x1_combiner is true"
+        },
+        {
+            "id": "KZS82UN9SMRO",
+            "expression": "(=> qpsk_modulator_specified\n    (= qpsk_port_configuration_valid\n       (and (= qpsk_optical_input_port_count\n               1)\n            (= qpsk_optical_output_port_count\n               1))))",
+            "alternateExpression": "if qpsk_modulator_specified is true, then qpsk_port_configuration_valid is equal to qpsk_optical_input_port_count is equal to 1 and qpsk_optical_output_port_count is equal to 1"
+        },
+        {
+            "id": "VAMA61T2H9NJ",
+            "expression": "(=> device_is_passive\n    (<= total_output_optical_power\n        total_input_optical_power))",
+            "alternateExpression": "if device_is_passive is true, then total_output_optical_power is no more than total_input_optical_power"
+        },
+        {
+            "id": "UIHI9AFC18EB",
+            "expression": "(=> device_is_passive\n    (= insertion_loss_physically_realizable\n       (>= insertion_loss_dB 0)))",
+            "alternateExpression": "if device_is_passive is true, then insertion_loss_physically_realizable is equal to insertion_loss_dB is at least 0"
+        },
+        {
+            "id": "QECBTN1UDW5N",
+            "expression": "(=> device_is_passive\n    (= s21_magnitude_physically_realizable\n       (<= s21_magnitude 1)))",
+            "alternateExpression": "if device_is_passive is true, then s21_magnitude_physically_realizable is equal to s21_magnitude is no more than 1"
+        },
+        {
+            "id": "XHBR0J17DOQ6",
+            "expression": "(=> (and mzi_topology_intended\n         mzi_arms_share_same_splitter\n         mzi_arms_share_same_combiner)\n    mzi_interferometric_function_valid)",
+            "alternateExpression": "if the following 3 statements are true: 1) mzi_topology_intended is true; 2) mzi_arms_share_same_splitter is true; 3) mzi_arms_share_same_combiner is true, then mzi_interferometric_function_valid is true"
+        }
+    ],
+    "variables": [
+        {
+            "name": "waveguide_width_specified",
+            "type": "BOOL",
+            "description": "True if a waveguide width is specified in the design"
+        },
+        {
+            "name": "waveguide_width",
+            "type": "NUMBER",
+            "description": "The width of the waveguide, must be positive if specified"
+        },
+        {
+            "name": "waveguide_bend_radius_specified",
+            "type": "BOOL",
+            "description": "True if a waveguide bend radius is specified in the design"
+        },
+        {
+            "name": "waveguide_bend_radius",
+            "type": "NUMBER",
+            "description": "The bend radius of the waveguide, must be positive if specified"
+        },
+        {
+            "name": "directional_coupler_gap_specified",
+            "type": "BOOL",
+            "description": "True if a directional coupler gap is specified in the design"
+        },
+        {
+            "name": "directional_coupler_gap",
+            "type": "NUMBER",
+            "description": "The gap of the directional coupler, must be positive if specified"
+        },
+        {
+            "name": "ring_resonator_radius_specified",
+            "type": "BOOL",
+            "description": "True if a ring resonator radius is specified in the design"
+        },
+        {
+            "name": "ring_resonator_radius",
+            "type": "NUMBER",
+            "description": "The radius of the ring resonator, must be positive if specified"
+        },
+        {
+            "name": "mzi_path_length_difference_specified",
+            "type": "BOOL",
+            "description": "True if a path length difference (delta_length) is specified for a Mach-Zehnder Interferometer"
+        },
+        {
+            "name": "mzi_path_length_difference",
+            "type": "NUMBER",
+            "description": "The path length difference (delta_length) between the two arms of an MZI, must be non-negative. A value of 0 indicates a balanced MZI; a value greater than 0 indicates an unbalanced MZI"
+        },
+        {
+            "name": "splitting_ratio_specified",
+            "type": "BOOL",
+            "description": "True if a splitting ratio is specified in the design"
+        },
+        {
+            "name": "splitting_ratio",
+            "type": "NUMBER",
+            "description": "The splitting ratio, must be between 0 and 1 inclusive if specified. A value of 0.5 represents 50:50, corresponding to 3 dB"
+        },
+        {
+            "name": "waveguide_length_specified",
+            "type": "BOOL",
+            "description": "True if a waveguide length is specified in the design"
+        },
+        {
+            "name": "waveguide_length",
+            "type": "NUMBER",
+            "description": "The length of the waveguide, must be positive if specified"
+        },
+        {
+            "name": "taper_length_specified",
+            "type": "BOOL",
+            "description": "True if a taper length is specified in the design"
+        },
+        {
+            "name": "taper_length",
+            "type": "NUMBER",
+            "description": "The length of the taper, must be positive if specified"
+        },
+        {
+            "name": "phase_shifter_length_specified",
+            "type": "BOOL",
+            "description": "True if a phase shifter length is specified in the design"
+        },
+        {
+            "name": "phase_shifter_length",
+            "type": "NUMBER",
+            "description": "The length of the phase shifter, must be positive if specified"
+        },
+        {
+            "name": "bend_angle_specified",
+            "type": "BOOL",
+            "description": "True if a bend angle is specified in the design"
+        },
+        {
+            "name": "bend_angle",
+            "type": "NUMBER",
+            "description": "The bend angle in degrees, must be positive and at most 360 degrees if specified"
+        },
+        {
+            "name": "mzi_topology_intended",
+            "type": "BOOL",
+            "description": "True if a Mach-Zehnder interferometer topology is intended in the design"
+        },
+        {
+            "name": "mzi_splitting_element_count",
+            "type": "INT",
+            "description": "The number of splitting elements in the MZI topology"
+        },
+        {
+            "name": "mzi_combining_element_count",
+            "type": "INT",
+            "description": "The number of combining elements in the MZI topology"
+        },
+        {
+            "name": "mzi_parallel_arm_count",
+            "type": "INT",
+            "description": "The number of parallel arms connecting the splitter and combiner in the MZI topology"
+        },
+        {
+            "name": "mzi_arms_share_same_splitter",
+            "type": "BOOL",
+            "description": "True if both arms of the MZI originate from the same splitter"
+        },
+        {
+            "name": "mzi_arms_share_same_combiner",
+            "type": "BOOL",
+            "description": "True if both arms of the MZI terminate at the same combiner"
+        },
+        {
+            "name": "mzi_interferometric_function_valid",
+            "type": "BOOL",
+            "description": "True if the interferometric function of the MZI is valid and will work properly (not broken). For proper MZI operation, both arms must originate from the same splitter and terminate at the same combiner. Use when text asks if MZI will work, function properly, operate correctly as an interferometer, or have valid interferometric function."
+        },
+        {
+            "name": "balanced_mzi_specified",
+            "type": "BOOL",
+            "description": "True if a balanced Mach-Zehnder interferometer is specified in the design"
+        },
+        {
+            "name": "unbalanced_mzi_specified",
+            "type": "BOOL",
+            "description": "True if an unbalanced or asymmetric Mach-Zehnder interferometer is specified in the design"
+        },
+        {
+            "name": "binary_splitter_tree_specified",
+            "type": "BOOL",
+            "description": "True if a 1xN power splitter tree constructed from 1x2 binary splitter elements is specified"
+        },
+        {
+            "name": "binary_splitter_tree_N",
+            "type": "INT",
+            "description": "The number of output ports N in the 1xN binary splitter tree"
+        },
+        {
+            "name": "binary_splitter_tree_stage_count",
+            "type": "INT",
+            "description": "The number of stages in the binary splitter tree"
+        },
+        {
+            "name": "binary_splitter_tree_splitter_count",
+            "type": "INT",
+            "description": "The total number of 1x2 splitters in the binary splitter tree"
+        },
+        {
+            "name": "splitter_tree_equal_power_required",
+            "type": "BOOL",
+            "description": "True if the 1xN splitter tree requires equal power at all N outputs"
+        },
+        {
+            "name": "all_splitters_have_50_50_ratio",
+            "type": "BOOL",
+            "description": "True if every splitter in the tree has a 50:50 splitting ratio (0.5)"
+        },
+        {
+            "name": "binary_splitter_tree_N_is_power_of_2",
+            "type": "BOOL",
+            "description": "True if the number of output ports N in the binary splitter tree is a power of 2 (2, 4, 8, 16, 32, 64)"
+        },
+        {
+            "name": "benes_network_specified",
+            "type": "BOOL",
+            "description": "True if an NxN Benes switching network is specified in the design"
+        },
+        {
+            "name": "benes_network_N",
+            "type": "INT",
+            "description": "The size N of the NxN Benes switching network"
+        },
+        {
+            "name": "benes_network_stage_count",
+            "type": "INT",
+            "description": "The number of stages in the Benes switching network"
+        },
+        {
+            "name": "benes_network_switches_per_stage",
+            "type": "INT",
+            "description": "The number of switches per stage in the Benes switching network"
+        },
+        {
+            "name": "benes_network_total_switches",
+            "type": "INT",
+            "description": "The total number of switches in the Benes switching network"
+        },
+        {
+            "name": "clements_mesh_specified",
+            "type": "BOOL",
+            "description": "True if an NxN Clements unitary mesh is specified in the design"
+        },
+        {
+            "name": "clements_mesh_N",
+            "type": "INT",
+            "description": "The size N of the NxN Clements unitary mesh"
+        },
+        {
+            "name": "clements_mesh_mzi_count",
+            "type": "INT",
+            "description": "The number of MZI blocks required in the Clements unitary mesh"
+        },
+        {
+            "name": "optical_network_specified",
+            "type": "BOOL",
+            "description": "True if an NxN optical network is specified in the design"
+        },
+        {
+            "name": "optical_network_type",
+            "type": "OpticalNetworkType",
+            "description": "The type of NxN optical network (Benes, Clements, Reck, crossbar, or Spanke)"
+        },
+        {
+            "name": "optical_network_N",
+            "type": "INT",
+            "description": "The size N of the NxN optical network"
+        },
+        {
+            "name": "optical_network_input_port_count",
+            "type": "INT",
+            "description": "The number of external input ports in the optical network"
+        },
+        {
+            "name": "optical_network_output_port_count",
+            "type": "INT",
+            "description": "The number of external output ports in the optical network"
+        },
+        {
+            "name": "wdm_demux_with_rings_specified",
+            "type": "BOOL",
+            "description": "True if an N-channel WDM demultiplexer using ring resonators is specified in the design"
+        },
+        {
+            "name": "wdm_demux_channel_count",
+            "type": "INT",
+            "description": "The number of channels N in the WDM demultiplexer"
+        },
+        {
+            "name": "wdm_demux_ring_resonator_count",
+            "type": "INT",
+            "description": "The number of ring resonators in the WDM demultiplexer circuit"
+        },
+        {
+            "name": "wdm_uses_ring_resonators",
+            "type": "BOOL",
+            "description": "True if a WDM system uses ring resonators for channel selection"
+        },
+        {
+            "name": "all_ring_resonators_have_distinct_wavelengths",
+            "type": "BOOL",
+            "description": "True if each ring resonator in the WDM system targets a distinct wavelength with no two rings having identical resonance wavelengths"
+        },
+        {
+            "name": "add_drop_ring_for_wdm_specified",
+            "type": "BOOL",
+            "description": "True if an add-drop ring resonator is used for WDM in the design"
+        },
+        {
+            "name": "add_drop_ring_is_double_bus",
+            "type": "BOOL",
+            "description": "True if the add-drop ring resonator is a double-bus (dual-bus) configuration"
+        },
+        {
+            "name": "add_drop_ring_port_count",
+            "type": "INT",
+            "description": "The number of ports in the add-drop ring resonator"
+        },
+        {
+            "name": "qpsk_modulator_specified",
+            "type": "BOOL",
+            "description": "True if a QPSK (Quadrature Phase Shift Keying) modulator is specified in the design"
+        },
+        {
+            "name": "qpsk_has_1x2_splitter",
+            "type": "BOOL",
+            "description": "True if the QPSK modulator contains a 1x2 splitter dividing the input into I and Q paths"
+        },
+        {
+            "name": "qpsk_mzm_count",
+            "type": "INT",
+            "description": "The number of Mach-Zehnder Modulators in the QPSK modulator circuit"
+        },
+        {
+            "name": "qpsk_has_90_degree_phase_shifter",
+            "type": "BOOL",
+            "description": "True if the QPSK modulator contains a 90-degree phase shifter on one path (the Q path)"
+        },
+        {
+            "name": "qpsk_has_2x1_combiner",
+            "type": "BOOL",
+            "description": "True if the QPSK modulator contains a 2x1 combiner recombining both paths"
+        },
+        {
+            "name": "qpsk_optical_input_port_count",
+            "type": "INT",
+            "description": "The number of optical input ports in the QPSK modulator circuit"
+        },
+        {
+            "name": "qpsk_optical_output_port_count",
+            "type": "INT",
+            "description": "The number of optical output ports in the QPSK modulator circuit"
+        },
+        {
+            "name": "device_is_passive",
+            "type": "BOOL",
+            "description": "True if the device is passive (has no external energy source)"
+        },
+        {
+            "name": "total_output_optical_power",
+            "type": "NUMBER",
+            "description": "The total output optical power of the device"
+        },
+        {
+            "name": "total_input_optical_power",
+            "type": "NUMBER",
+            "description": "The total input optical power of the device"
+        },
+        {
+            "name": "insertion_loss_dB",
+            "type": "NUMBER",
+            "description": "The insertion loss of the device in dB. Must be non-negative for passive devices. Negative insertion loss implies gain, which requires an energy source"
+        },
+        {
+            "name": "s21_magnitude",
+            "type": "NUMBER",
+            "description": "The magnitude of the S_21 parameter (|S_21|). Must be less than or equal to 1 for passive devices. A value greater than 1 implies optical gain"
+        },
+        {
+            "name": "waveguide_width_valid",
+            "type": "BOOL",
+            "description": "Whether the waveguide width specification is valid and acceptable - true when width is positive (> 0). Use when text asks if a waveguide width is valid, acceptable, appropriate, reasonable, correct, or physically meaningful."
+        },
+        {
+            "name": "waveguide_bend_radius_valid",
+            "type": "BOOL",
+            "description": "Whether the waveguide bend radius specification is valid and acceptable - true when bend radius is positive (> 0). Use when text asks if a bend radius is valid, acceptable, appropriate, reasonable, correct, or physically meaningful."
+        },
+        {
+            "name": "directional_coupler_gap_valid",
+            "type": "BOOL",
+            "description": "Whether the directional coupler gap specification is valid and acceptable - true when gap is positive (> 0). Directional couplers require a positive gap value for proper operation. Use when text asks if a directional coupler gap is valid, acceptable, appropriate, reasonable, correct, sufficient for proper operation, or physically meaningful."
+        },
+        {
+            "name": "ring_resonator_radius_valid",
+            "type": "BOOL",
+            "description": "Whether the ring resonator radius specification is valid and acceptable - true when radius is positive (> 0). Negative radius values are not physically meaningful. Use when text asks if a ring resonator radius is valid, acceptable, appropriate, reasonable, correct, or physically meaningful."
+        },
+        {
+            "name": "splitting_ratio_valid",
+            "type": "BOOL",
+            "description": "Whether the splitting ratio specification is valid and acceptable - true when ratio is between 0 and 1 inclusive. A value of 0.5 represents 50:50 (3 dB). Use when text asks if a splitting ratio is valid, acceptable, appropriate, reasonable, correct, within bounds, or physically meaningful."
+        },
+        {
+            "name": "waveguide_length_valid",
+            "type": "BOOL",
+            "description": "Whether the waveguide length specification is valid and acceptable - true when length is positive (> 0). Use when text asks if a waveguide length is valid, acceptable, appropriate, reasonable, correct, or physically meaningful."
+        },
+        {
+            "name": "taper_length_valid",
+            "type": "BOOL",
+            "description": "Whether the taper length specification is valid and acceptable - true when length is positive (> 0). Use when text asks if a taper length is valid, acceptable, appropriate, reasonable, correct, or physically meaningful."
+        },
+        {
+            "name": "phase_shifter_length_valid",
+            "type": "BOOL",
+            "description": "Whether the phase shifter length specification is valid and acceptable - true when length is positive (> 0). Use when text asks if a phase shifter length is valid, acceptable, appropriate, reasonable, correct, or physically meaningful."
+        },
+        {
+            "name": "bend_angle_valid",
+            "type": "BOOL",
+            "description": "Whether the bend angle specification is valid and acceptable - true when angle is positive and at most 360 degrees. Use when text asks if a bend angle is valid, acceptable, appropriate, reasonable, correct, within bounds, or physically meaningful."
+        },
+        {
+            "name": "balanced_mzi_specification_valid",
+            "type": "BOOL",
+            "description": "Whether the balanced MZI specification is valid and consistent - true when path length difference equals 0. Balanced MZIs require equal optical path lengths in both arms. Use when text asks if a balanced MZI specification is valid, correct, appropriate, consistent, will work properly, or is acceptable."
+        },
+        {
+            "name": "unbalanced_mzi_specification_valid",
+            "type": "BOOL",
+            "description": "Whether the unbalanced or asymmetric MZI specification is valid and appropriate - true when path length difference is greater than 0. Unbalanced MZIs require non-zero path length difference between arms. Use when text asks if an asymmetric or unbalanced MZI specification is valid, appropriate, correct, acceptable, reasonable, or will work properly."
+        },
+        {
+            "name": "binary_splitter_tree_feasible",
+            "type": "BOOL",
+            "description": "Whether the binary splitter tree design is feasible and can be constructed using 1x2 binary elements - true when N is a power of 2 (2, 4, 8, 16, 32, 64). A tree of 1x2 elements cannot produce an odd number of outputs or a non-power-of-2 count without leaving ports unused. Use when text asks if a tree design is feasible, possible, constructible, can be built, is architecturally valid, or can be constructed."
+        },
+        {
+            "name": "wdm_demux_ring_count_sufficient",
+            "type": "BOOL",
+            "description": "Whether the WDM demultiplexer has sufficient ring resonators for the number of channels - true when ring count is greater than or equal to channel count. An N-channel WDM demultiplexer requires at least N ring resonators. Use when text asks if ring count is sufficient, adequate, enough, meets requirements, or is acceptable for the number of channels."
+        },
+        {
+            "name": "wdm_ring_design_valid",
+            "type": "BOOL",
+            "description": "Whether the WDM ring resonator design is valid and correct - true when all rings have distinct wavelengths. Each ring must target a different wavelength for proper WDM channel selection. No two rings in the same WDM device should have identical resonance wavelengths. Use when text asks if a WDM ring design is correct, valid, appropriate, will work properly, function correctly, is acceptable, or meets requirements."
+        },
+        {
+            "name": "add_drop_ring_configuration_valid",
+            "type": "BOOL",
+            "description": "Whether the add-drop ring resonator configuration is valid and will work properly for WDM applications - true when it is a double-bus (dual-bus) ring with exactly 4 ports (input, through, add, drop). Use when text asks if configuration is valid, correct, appropriate, will work properly, function correctly, is suitable for add-drop WDM, or meets requirements."
+        },
+        {
+            "name": "qpsk_design_complete",
+            "type": "BOOL",
+            "description": "Whether the QPSK modulator design is complete with all required components - true when it has a 1x2 splitter, 2 MZMs, a 90-degree phase shifter on one path, and a 2x1 combiner. Use when text asks if QPSK design is complete, has all components, is fully specified, includes all required elements, or is architecturally complete."
+        },
+        {
+            "name": "qpsk_port_configuration_valid",
+            "type": "BOOL",
+            "description": "Whether the QPSK modulator port configuration is valid and meets requirements - true when it has exactly 1 optical input port and 1 optical output port. Use when text asks if QPSK port configuration is valid, correct, appropriate, meets requirements, is acceptable, or is properly configured."
+        },
+        {
+            "name": "insertion_loss_physically_realizable",
+            "type": "BOOL",
+            "description": "Whether the insertion loss value is physically realizable for the device type - for passive devices, true when insertion loss is greater than or equal to 0 dB. Negative insertion loss implies optical gain which requires an energy source and is not possible for passive devices. Use when text asks if insertion loss is physically realizable, possible, valid, acceptable, reasonable for a passive device, or violates energy conservation."
+        },
+        {
+            "name": "s21_magnitude_physically_realizable",
+            "type": "BOOL",
+            "description": "Whether the S21 magnitude is physically realizable for the device type - for passive devices, true when |S_21| is less than or equal to 1. Values greater than 1 imply optical gain which requires an energy source and violates energy conservation principles for passive devices. Use when text asks if S21 value is physically realizable, possible, valid, acceptable, reasonable for a passive device, or violates energy conservation."
+        }
+    ]
+}

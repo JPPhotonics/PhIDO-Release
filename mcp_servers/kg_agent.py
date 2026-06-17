@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Generator
 
-from openai import OpenAI
+from mcp_servers.llm_client import create_client
 
 # ---------------------------------------------------------------------------
 # Path setup
@@ -385,7 +385,7 @@ def ask_stream(
         - ``{"type": "tool_result", "name": str, "result": str, "summary": dict, "latency_s": float}``
         - ``{"type": "answer", "content": str}``
     """
-    client = OpenAI()
+    client = create_client(model)
 
     if not messages:
         messages.append({"role": "system", "content": SYSTEM_PROMPT})
@@ -397,28 +397,21 @@ def ask_stream(
     tool_rounds = 0
 
     for _ in range(max_rounds):
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=TOOLS,
-        )
-        choice = response.choices[0]
+        resp = client.complete(messages, tools=TOOLS)
 
-        if choice.finish_reason == "stop":
-            answer = choice.message.content or ""
+        if resp.stop_reason == "stop" and not resp.tool_calls:
+            answer = resp.content or ""
             messages.append({"role": "assistant", "content": answer})
             yield {"type": "answer", "content": answer}
             break
 
-        # Process tool calls
-        msg = choice.message
-        messages.append(_serialise_assistant_message(msg))
+        messages.append(client.assistant_message(resp))
         tool_rounds += 1
 
-        for tc in msg.tool_calls or []:
-            fn_name = tc.function.name
+        for tc in resp.tool_calls:
+            fn_name = tc.name
             try:
-                args = json.loads(tc.function.arguments)
+                args = json.loads(tc.arguments)
             except json.JSONDecodeError:
                 args = {}
 
@@ -451,13 +444,8 @@ def ask_stream(
                 "latency_s": tool_latency,
             }
 
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc.id,
-                "content": result_str,
-            })
+            messages.append(client.tool_result_message(tc, result_str))
     else:
-        # max_rounds exhausted — take whatever the LLM last said
         answer = messages[-1].get("content", "") if messages else ""
         yield {"type": "answer", "content": answer}
 
