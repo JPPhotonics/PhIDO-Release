@@ -16,7 +16,7 @@ Connect a mzi_2x2_heater_tin_cband (set length to 100) to two mzi_2x2_heater_tin
 Design a 1×16 power splitter using 4 stages of 1×2 MMI couplers such that each output port receives an equal share of the input power.
 
 A 4 port MZI
-MZI with a length of 50 um and 10 GHz bandwidth 
+MZI with a length of 50 um and 10 GHz bandwidth
 A 90 degree waveguide bend
 Give me a 2x2 MMI with a gap of 500 nm between the inputs/outputs.
 "Three MMIs connected in series. The lengths of the multimode region for each MMI are 1um, 2um and 3um."
@@ -64,7 +64,7 @@ Cascaded 1x2 MMIs to create a tree network with 4 outputs
 "A passive MZI, one input port and one output port"
 Design a single-bus ring resonator (with a radius of 28) connected to two grating couplers for input/output coupling.
 "Design a photonic circuit with two Euler bends connected by a tapering section. The tapering section, contains two tapers - In the first taper the width of the waveguide smoothly narrows down to 0.1 um,  and in the second taper the width widens back to the original width. "
-Create a passive asymmetric Mach-Zehnder Interferometer at 1550 nm with a 300 µm path-length difference between arms. The MZI has one input and one output port both terminated in grating couplers. 
+Create a passive asymmetric Mach-Zehnder Interferometer at 1550 nm with a 300 µm path-length difference between arms. The MZI has one input and one output port both terminated in grating couplers.
 Design a ring-loaded Mach-Zehnder interferometer where the MZI uses two 50/50 directional couplers as splitters/combiners. One arm of the MZI has a ring resonator of radius 10 µm.
 "Design two cascaded double-bus silicon ring resonators, each with a 10 µm radius. In each ring, the top bus is for input/output and the bottom bus is for drop/through ports. The second ring’s input bus is connected to the drop port of the first ring, forming a serial filter chain. Each bus-to-ring gap is 200 nm."
 Design five single-bus ring resonators with radii sweeping from 5 to 100. Each bus waveguide is terminated by two grating couplers for input/output coupling. Offset these five small circuits horizontally
@@ -79,7 +79,7 @@ Design five single-bus ring resonators with radii sweeping from 5 to 100. Each b
 "Design a single-bus ring resonator (with a radius of 28 um)  connected to two grating couplers for input/output coupling. The grating couplers should be facing away from each other, and should be vertically offset by 100 um."
 "Connect three 1x2 mmi splitters in series, splitting the input into four outputs."
 "Design a 1×4 wavelength-division demultiplexer using active Mach-Zehnder Interferometers. Each MZI is thermo-optically tuned to drop one of four wavelengths (1540, 1550, 1560, 1570 nm). Arrange the MZIs in cascade along a single bus waveguide, with a 2×2 coupler (50:50) at each MZI input/output. Include a single input port and four distinct output ports."
-Design a balanced 2×2 Mach-Zehnder Interferometer at 1550 nm using two 50:50 directional couplers and straight waveguides of equal length in both arms (~500 µm each). 
+Design a balanced 2×2 Mach-Zehnder Interferometer at 1550 nm using two 50:50 directional couplers and straight waveguides of equal length in both arms (~500 µm each).
 
 PIC Bench modified
 "Design an optical 64-QAM transmitter that encodes 6 bits per symbol using exactly three dual-drive Mach-Zehnder Modulators (MZM). Each MZM has 1 optical input port and 1 optical output port, and two RF input drives for phase control. Use two 1×2 multimode interferometer (MMIs) to split a single input optical signal equally into three paths for the parallel MZMs. Ensure each mzm_dual modulates two of the six total bits by adjusting the phase via its dual RF drives. After modulation, recombine the three optical outputs using two 2×1 MMIs to produce the 64-QAM output signal, where amplitude and phase both vary. "
@@ -89,8 +89,8 @@ PIC Bench modified
 The network should use 20 2×2 optical switching units and consist of 5 stages, each with 4 2×2 optical switching units. Use the built-in component mzi_2x2_pn_diode to represent each 2×2 optical switching unit. Ensure that the final design places all 8 input ports on one side and all 8 output ports on the other, with correct inter-stage connectivity to realize a full Benes network."
 Design a 4×4 reconfigurable unitary mesh using the Clements scheme. Arrange 6 MZI blocks in 4 columns of 3 rows (rectangular topology). Use a built-in components called mzi_2x2_pn_diode for the MZI block.
 Design an 8 × 8 reconfigurable unitary mesh using the Clements scheme. Arrange 28 MZI blocks in a rectangular topology of 8 columns and 4 rows. Use a built-in components called mzi_2x2_pn_diode for the MZI block.
-Design a 4×4 optical switching network using a crossbar architecture with mzi_2x2_pn_diode devices. Arrange 16 of these 2×2 switches in a grid such that each of the 4 input waveguides intersects with each of the 4 output waveguides exactly once. 
-Design a 8×8 optical switching network using a crossbar architecture with mzi_2x2_pn_diode devices. Arrange 64 of these 2×2 switches in a grid such that each of the 8 input waveguides intersects with each of the 8 output waveguides exactly once. 
+Design a 4×4 optical switching network using a crossbar architecture with mzi_2x2_pn_diode devices. Arrange 16 of these 2×2 switches in a grid such that each of the 4 input waveguides intersects with each of the 4 output waveguides exactly once.
+Design a 8×8 optical switching network using a crossbar architecture with mzi_2x2_pn_diode devices. Arrange 64 of these 2×2 switches in a grid such that each of the 8 input waveguides intersects with each of the 8 output waveguides exactly once.
 "Design an optical direct modulator using single drive Mach-Zehnder Modulators (MZMs). The circuit should have only one input and one output, and employ the MZM to modulate the signal. Use a built-in components called mzm to represent the single drive Mach-Zehnder modulators."
 "Create a Mach-Zehnder interferometer (MZI) with a single input and output, featuring a path length difference of ΔL. A phase shifters with a length of L should be applied to the top arm to modulate the phase of the optical signal. Use the built-in multimode interferometer (MMI) component for splitting and combining the optical signals, and the built-in phase shifters to achieve the desired phase modulation. Parameters: ΔL=10 microns. L=10 microns"
 "Create a Mach-Zehnder Modulator (MZM) which have a single optical input and a single optical output. The phase shifters with a length of L should be applied to the two arms to modulate the phase of the optical signal. Use the built-in multimode interferometer (MMI) component for splitting and combining the optical signals, and the built-in phase shifters to achieve the desired phase modulation. Parameters:L=10 microns"

@@ -100,20 +100,22 @@ def _safe_atom(s: str) -> str:
 def _resolve_component_type(comp) -> str:
     """Determine the Clingo component type from the best available field.
 
-    Priority: role (functional purpose) > component_type > description keywords.
-
-    Clingo rules count by functional role (splitter, combiner, mzm, etc.),
-    not device type (coupler, mmi, etc.).  A directional coupler used as a
-    splitter must emit ``splitter``, not ``coupler``.
+    Clingo rules count functional roles where they disambiguate generic devices
+    (for example a coupler used as a splitter), but an explicit canonical
+    ``component_type`` should win over broad roles such as ``modulator``.
     """
+    explicit_type = _safe_atom(comp.component_type) if comp.component_type else None
+    if explicit_type and explicit_type not in {"coupler", "mmi"}:
+        return explicit_type
+
     if comp.role:
         role_lower = comp.role.lower()
         for keyword, ctype in _ROLE_TO_TYPE.items():
             if keyword in role_lower:
                 return ctype
 
-    if comp.component_type:
-        return _safe_atom(comp.component_type)
+    if explicit_type:
+        return explicit_type
 
     return _infer_component_type(comp)
 
